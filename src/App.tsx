@@ -603,7 +603,7 @@ function AppContent() {
       });
       return sum + currentAccBalance;
     }, 0);
-  }, [accounts, transactions]);
+  }, [accounts, transactions, selectedAccountId]);
 
   const categoryData = useMemo(() => {
     const data: Record<string, { name: string, value: number, color: string }> = {};
@@ -695,7 +695,7 @@ function AppContent() {
         balance: totalBalance
       };
     });
-  }, [accounts, transactions, filterMonth]);
+  }, [accounts, transactions, filterMonth, selectedAccountId]);
 
   const handleAddTransaction = async (data: any) => {
     if (!user) return;
