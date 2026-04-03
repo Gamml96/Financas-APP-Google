@@ -1,0 +1,108 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile and financial settings",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Firebase Auth UID" },
+        "displayName": { "type": "string", "description": "User's display name" },
+        "email": { "type": "string", "format": "email", "description": "User's email address" },
+        "photoURL": { "type": "string", "description": "User's profile picture URL" },
+        "currency": { "type": "string", "description": "Preferred currency (e.g., BRL, USD)" },
+        "totalBalance": { "type": "number", "description": "Current total balance" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Account creation timestamp" }
+      },
+      "required": ["uid", "email"]
+    },
+    "Account": {
+      "title": "Account",
+      "description": "Bank account or credit card",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "name": { "type": "string", "description": "Account name" },
+        "type": { "type": "string", "enum": ["checking", "savings", "credit", "hybrid"], "description": "Type of account" },
+        "balance": { "type": "number", "description": "Initial or current balance" },
+        "closingDay": { "type": "integer", "description": "Bill closing day (for credit cards)" },
+        "dueDay": { "type": "integer", "description": "Bill due day (for credit cards)" },
+        "color": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "name", "type"]
+    },
+    "Transaction": {
+      "title": "Transaction",
+      "description": "Financial income or expense record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "accountId": { "type": "string", "description": "Linked account ID" },
+        "amount": { "type": "number" },
+        "type": { "type": "string", "enum": ["income", "expense"] },
+        "paymentType": { "type": "string", "enum": ["credit", "debit"], "description": "Method of payment" },
+        "category": { "type": "string" },
+        "description": { "type": "string" },
+        "date": { "type": "string", "format": "date-time", "description": "Purchase/Occurrence date" },
+        "dueDate": { "type": "string", "format": "date-time", "description": "Actual payment due date" },
+        "installment": { "type": "integer", "description": "Current installment number" },
+        "totalInstallments": { "type": "integer", "description": "Total number of installments" },
+        "groupId": { "type": "string", "description": "ID to group installments or recurring txs" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "accountId", "amount", "type", "category", "date"]
+    },
+    "Category": {
+      "title": "Category",
+      "description": "Transaction category",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique category ID" },
+        "userId": { "type": "string", "description": "Owner's UID (null for default categories)" },
+        "name": { "type": "string", "description": "Category name" },
+        "icon": { "type": "string", "description": "Lucide icon name" },
+        "color": { "type": "string", "description": "Hex color code" },
+        "type": { "type": "string", "enum": ["income", "expense", "both"], "description": "Category usage type" }
+      },
+      "required": ["name", "type"]
+    },
+    "Budget": {
+      "title": "Budget",
+      "description": "Monthly budget for a category",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "category": { "type": "string" },
+        "amount": { "type": "number" },
+        "month": { "type": "string", "description": "Month in YYYY-MM format" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "category", "amount", "month"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profile data"
+    },
+    "/transactions/{transactionId}": {
+      "schema": "Transaction",
+      "description": "Financial transaction records"
+    },
+    "/categories/{categoryId}": {
+      "schema": "Category",
+      "description": "Transaction categories"
+    },
+    "/budgets/{budgetId}": {
+      "schema": "Budget",
+      "description": "Monthly budget settings"
+    },
+    "/accounts/{accountId}": {
+      "schema": "Account",
+      "description": "Bank account or credit card"
+    }
+  }
+}
