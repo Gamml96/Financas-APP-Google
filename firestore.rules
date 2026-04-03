@@ -1,0 +1,196 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Fields:
+    //   - uid: string (required)
+    //   - displayName: string (optional)
+    //   - email: string (required, email format)
+    //   - photoURL: string (optional, url format)
+    //   - currency: string (optional)
+    //   - totalBalance: number (optional)
+    //   - createdAt: timestamp (optional)
+    //   - role: string (optional, 'admin' or 'user')
+    //
+    // Collection: transactions
+    // Fields:
+    //   - userId: string (required, owner)
+    //   - amount: number (required, positive)
+    //   - type: string (required, 'income' or 'expense')
+    //   - category: string (required)
+    //   - description: string (optional)
+    //   - date: timestamp (required)
+    //   - dueDate: timestamp (optional)
+    //   - createdAt: timestamp (required)
+    //   - installment: number (optional)
+    //   - totalInstallments: number (optional)
+    //   - groupId: string (optional)
+    //   - isRecurring: boolean (optional)
+    //   - frequency: string (optional)
+    //   - paymentType: string (optional)
+    //   - accountId: string (required)
+    //
+    // Collection: accounts
+    // Fields:
+    //   - userId: string (required, owner)
+    //   - name: string (required)
+    //   - type: string (required)
+    //   - balance: number (required)
+    //   - initialBalance: number (optional)
+    //   - initialBalanceDate: timestamp (optional)
+    //   - closingDay: number (optional)
+    //   - dueDay: number (optional)
+    //   - color: string (required)
+    //   - createdAt: timestamp (required)
+    //
+    // Collection: categories
+    // Fields:
+    //   - userId: string (optional, null for default)
+    //   - name: string (required)
+    //   - icon: string (required)
+    //   - color: string (required)
+    //   - type: string (required, 'income', 'expense', or 'both')
+    //
+    // Collection: budgets
+    // Fields:
+    //   - userId: string (required, owner)
+    //   - category: string (required)
+    //   - amount: number (required, positive)
+    //   - month: string (required, YYYY-MM)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isDocOwner() {
+      return isAuthenticated() && request.auth.uid == resource.data.get('userId', '');
+    }
+
+    function isNewDocOwner() {
+      return isAuthenticated() && request.auth.uid == request.resource.data.get('userId', '');
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', 'user') == 'admin' ||
+          (request.auth.token.email == "Gamml1996@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    function isValidUrl(url) {
+      return url is string && (url.matches("^https://.*") || url.matches("^http://.*"));
+    }
+
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+    function isValidUser(data) {
+      return data.uid is string && data.uid == request.auth.uid &&
+             data.email is string && isValidEmail(data.email) &&
+             (!('photoURL' in data) || data.photoURL == null || isValidUrl(data.photoURL)) &&
+             (!('totalBalance' in data) || data.totalBalance is number);
+    }
+
+    function isValidTransaction(data) {
+      return data.userId is string && data.userId == request.auth.uid &&
+             data.amount is number && data.amount >= 0 &&
+             data.type in ['income', 'expense'] &&
+             data.category is string && data.category.size() > 0 &&
+             data.date is timestamp &&
+             data.accountId is string;
+    }
+
+    function isValidAccount(data) {
+      return data.userId is string && data.userId == request.auth.uid &&
+             data.name is string && data.name.size() > 0 &&
+             data.type is string &&
+             data.balance is number &&
+             data.color is string;
+    }
+
+    function isValidCategory(data) {
+      return data.name is string && data.name.size() > 0 &&
+             data.icon is string && data.color is string &&
+             data.type in ['income', 'expense', 'both'] &&
+             (!('userId' in data) || data.userId == request.auth.uid || data.userId == null);
+    }
+
+    function isValidBudget(data) {
+      return data.userId is string && data.userId == request.auth.uid &&
+             data.category is string && data.category.size() > 0 &&
+             data.amount is number && data.amount >= 0 &&
+             data.month is string && data.month.matches("^\\d{4}-\\d{2}$");
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    // Users collection
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if isOwner(userId) && isValidUser(request.resource.data) && 
+                    (!('role' in request.resource.data) || request.resource.data.role == 'user' || isAdmin());
+      allow update: if isOwner(userId) && isValidUser(request.resource.data) && 
+                    (!('role' in request.resource.data) || request.resource.data.role == resource.data.get('role', 'user') || isAdmin());
+      allow delete: if isAdmin();
+    }
+
+    // Accounts collection
+    match /accounts/{accountId} {
+      allow read: if isAuthenticated() && (resource == null || resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid && isValidAccount(request.resource.data);
+      allow update: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin()) && isValidAccount(request.resource.data);
+      allow delete: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
+    }
+
+    // Transactions collection
+    match /transactions/{transactionId} {
+      allow read: if isAuthenticated() && (resource == null || resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isNewDocOwner() && isValidTransaction(request.resource.data);
+      allow update: if (isDocOwner() || isAdmin()) && isNewDocOwner() && isValidTransaction(request.resource.data);
+      allow delete: if isDocOwner() || isAdmin();
+    }
+
+    // Categories collection
+    match /categories/{categoryId} {
+      allow read: if isAuthenticated() && (resource == null || resource.data.userId == request.auth.uid || resource.data.userId == null || isAdmin());
+      allow create: if isAuthenticated() && isValidCategory(request.resource.data);
+      allow update: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin()) && isValidCategory(request.resource.data);
+      allow delete: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
+    }
+
+    // Budgets collection
+    match /budgets/{budgetId} {
+      allow read: if isDocOwner() || isAdmin();
+      allow create: if isNewDocOwner() && isValidBudget(request.resource.data);
+      allow update: if (isDocOwner() || isAdmin()) && isNewDocOwner() && isValidBudget(request.resource.data);
+      allow delete: if isDocOwner() || isAdmin();
+    }
+
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
