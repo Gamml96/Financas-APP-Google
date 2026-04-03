@@ -487,8 +487,9 @@ export default function App() {
 
   const totals = useMemo(() => {
     return filteredTransactions.reduce((acc, tx) => {
-      if (tx.type === 'income') acc.income += tx.amount;
-      else acc.expense += tx.amount;
+      const amount = Number(tx.amount) || 0;
+      if (tx.type === 'income') acc.income += amount;
+      else acc.expense += amount;
       return acc;
     }, { income: 0, expense: 0 });
   }, [filteredTransactions]);
@@ -502,7 +503,8 @@ export default function App() {
         const cat = allCategories.find(c => c.name === tx.category) || DEFAULT_CATEGORIES[7];
         data[tx.category] = { name: tx.category, value: 0, color: cat.color };
       }
-      data[tx.category].value += tx.amount;
+      const amount = Number(tx.amount) || 0;
+      data[tx.category].value += amount;
     });
     return Object.values(data);
   }, [filteredTransactions, allCategories]);
@@ -513,7 +515,7 @@ export default function App() {
     
     return currentBudgets.map(budget => {
       const spent = categoryData.find(c => c.name === budget.category)?.value || 0;
-      const percent = (spent / budget.amount) * 100;
+      const percent = budget.amount > 0 ? (spent / budget.amount) * 100 : 0;
       const cat = allCategories.find(c => c.name === budget.category);
       
       return {
@@ -552,7 +554,7 @@ export default function App() {
           return;
         }
 
-        let currentAccBalance = acc.initialBalance || 0;
+        let currentAccBalance = Number(acc.initialBalance) || 0;
 
         // Somar todas as transações desta conta que ocorreram entre a data inicial e o dia atual
         transactions.filter(tx => tx.accountId === acc.id).forEach(tx => {
@@ -567,8 +569,9 @@ export default function App() {
 
           if (isAfter(startOfDay(txDate), startOfDay(initialDate)) || isSameDay(txDate, initialDate)) {
             if (isBefore(startOfDay(txDate), startOfDay(day)) || isSameDay(txDate, day)) {
-              if (tx.type === 'income') currentAccBalance += tx.amount;
-              else currentAccBalance -= tx.amount;
+              const amount = Number(tx.amount) || 0;
+              if (tx.type === 'income') currentAccBalance += amount;
+              else currentAccBalance -= amount;
             }
           }
         });
@@ -1733,7 +1736,7 @@ function SummaryCard({ title, amount, icon, color, trend }: { title: string, amo
       </div>
       <h4 className="text-slate-500 text-sm font-medium mb-1">{title}</h4>
       <p className="text-2xl font-bold text-slate-900">
-        ${amount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+        ${(Number(amount) || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
       </p>
     </div>
   );
@@ -2223,7 +2226,7 @@ function AccountManager({ accounts, onAdd, onUpdate, onDelete }: { accounts: Acc
                 type="number"
                 min="1"
                 max="31"
-                value={newAcc.closingDay}
+                value={isNaN(newAcc.closingDay) ? '' : newAcc.closingDay}
                 onChange={(e) => setNewAcc({ ...newAcc, closingDay: parseInt(e.target.value) })}
                 className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500"
               />
@@ -2234,7 +2237,7 @@ function AccountManager({ accounts, onAdd, onUpdate, onDelete }: { accounts: Acc
                 type="number"
                 min="1"
                 max="31"
-                value={newAcc.dueDay}
+                value={isNaN(newAcc.dueDay) ? '' : newAcc.dueDay}
                 onChange={(e) => setNewAcc({ ...newAcc, dueDay: parseInt(e.target.value) })}
                 className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500"
               />
