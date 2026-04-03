@@ -279,10 +279,17 @@ function AppContent() {
     }
   }, [toast]);
 
-  // Notification Permission Check
+  // Notification Permission Check & SW Registration
   useEffect(() => {
     if ("Notification" in window) {
       setNotificationsEnabled(Notification.permission === "granted");
+    }
+    
+    // Register Service Worker for mobile notifications
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/sw.js")
+        .then(reg => console.log("Service Worker registrado:", reg))
+        .catch(err => console.error("Erro ao registrar Service Worker:", err));
     }
   }, []);
 
@@ -320,10 +327,28 @@ function AppContent() {
 
       if (permission === "granted") {
         setToast({ message: "Notificações ativadas com sucesso!", type: 'success' });
-        new Notification("AppFinancas", {
-          body: "As notificações de contas a vencer estão ativas.",
-          icon: "https://www.google.com/favicon.ico"
-        });
+        
+        // Try to use Service Worker for the test notification
+        if ("serviceWorker" in navigator) {
+          navigator.serviceWorker.ready.then(registration => {
+            registration.showNotification("FluxiaFinance", {
+              body: "As notificações de contas a vencer estão ativas.",
+              icon: "https://www.google.com/favicon.ico",
+              badge: "https://www.google.com/favicon.ico"
+            });
+          }).catch(() => {
+            // Fallback to standard notification
+            new Notification("FluxiaFinance", {
+              body: "As notificações de contas a vencer estão ativas.",
+              icon: "https://www.google.com/favicon.ico"
+            });
+          });
+        } else {
+          new Notification("FluxiaFinance", {
+            body: "As notificações de contas a vencer estão ativas.",
+            icon: "https://www.google.com/favicon.ico"
+          });
+        }
       } else {
         setToast({ message: "Permissão de notificação negada.", type: 'info' });
       }
@@ -356,10 +381,23 @@ function AppContent() {
             const storageKey = `notified_${user.uid}_${tx.id}`;
             if (!localStorage.getItem(storageKey)) {
               try {
-                new Notification("Conta a vencer em breve!", {
-                  body: `A conta "${tx.description || tx.category}" de R$${tx.amount.toFixed(2)} vence em ${format(dueDate, 'dd/MM/yyyy')}.`,
-                  icon: "https://www.google.com/favicon.ico"
-                });
+                // Use Service Worker for better mobile support
+                if ("serviceWorker" in navigator) {
+                  navigator.serviceWorker.ready.then(registration => {
+                    registration.showNotification("Conta a vencer em breve!", {
+                      body: `A conta "${tx.description || tx.category}" de R$${tx.amount.toFixed(2)} vence em ${format(dueDate, 'dd/MM/yyyy')}.`,
+                      icon: "https://www.google.com/favicon.ico",
+                      badge: "https://www.google.com/favicon.ico",
+                      vibrate: [200, 100, 200],
+                      tag: tx.id // Prevent duplicate notifications for same transaction
+                    } as any);
+                  });
+                } else {
+                  new Notification("Conta a vencer em breve!", {
+                    body: `A conta "${tx.description || tx.category}" de R$${tx.amount.toFixed(2)} vence em ${format(dueDate, 'dd/MM/yyyy')}.`,
+                    icon: "https://www.google.com/favicon.ico"
+                  });
+                }
                 localStorage.setItem(storageKey, 'true');
               } catch (e) {
                 console.warn("Falha ao enviar notificação nativa:", e);
