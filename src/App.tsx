@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, Component } from 'react';
 import { 
   auth, 
   db, 
@@ -182,7 +182,69 @@ const DEFAULT_CATEGORIES: Category[] = [
   { id: '8', name: 'Outros', icon: 'MoreHorizontal', color: '#6b7280', type: 'both' },
 ];
 
+// Error Boundary Component
+interface ErrorBoundaryProps {
+  children: React.ReactNode;
+}
+
+interface ErrorBoundaryState {
+  hasError: boolean;
+  error: any;
+}
+
+class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  constructor(props: ErrorBoundaryProps) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: any) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: any, errorInfo: any) {
+    console.error("ErrorBoundary caught an error", error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 text-center">
+          <div className="bg-rose-100 p-4 rounded-full text-rose-600 mb-6">
+            <AlertTriangle className="w-12 h-12" />
+          </div>
+          <h1 className="text-2xl font-bold text-slate-900 mb-2">Ops! Algo deu errado.</h1>
+          <p className="text-slate-600 mb-8 max-w-md">
+            Ocorreu um erro inesperado. Tente recarregar a página ou fazer login novamente.
+          </p>
+          <div className="bg-white p-4 rounded-2xl border border-slate-200 text-left mb-8 w-full max-w-lg overflow-auto max-h-48">
+            <code className="text-xs text-rose-600 whitespace-pre-wrap">
+              {this.state.error?.message || String(this.state.error)}
+            </code>
+          </div>
+          <button 
+            onClick={() => window.location.reload()}
+            className="bg-indigo-600 text-white px-8 py-3 rounded-2xl font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100"
+          >
+            Recarregar Aplicativo
+          </button>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
 export default function App() {
+  return (
+    <ErrorBoundary>
+      <AppContent />
+    </ErrorBoundary>
+  );
+}
+
+function AppContent() {
   const [user, setUser] = useState<User | null>(null);
   const [userProfile, setUserProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -291,11 +353,15 @@ export default function App() {
           if (dueDate > now && dueDate <= futureDate) {
             const storageKey = `notified_${user.uid}_${tx.id}`;
             if (!localStorage.getItem(storageKey)) {
-              new Notification("Conta a vencer em breve!", {
-                body: `A conta "${tx.description || tx.category}" de R$${tx.amount.toFixed(2)} vence em ${format(dueDate, 'dd/MM/yyyy')}.`,
-                icon: "https://www.google.com/favicon.ico"
-              });
-              localStorage.setItem(storageKey, 'true');
+              try {
+                new Notification("Conta a vencer em breve!", {
+                  body: `A conta "${tx.description || tx.category}" de R$${tx.amount.toFixed(2)} vence em ${format(dueDate, 'dd/MM/yyyy')}.`,
+                  icon: "https://www.google.com/favicon.ico"
+                });
+                localStorage.setItem(storageKey, 'true');
+              } catch (e) {
+                console.warn("Falha ao enviar notificação nativa:", e);
+              }
             }
           }
         }
@@ -495,6 +561,44 @@ export default function App() {
   }, [filteredTransactions]);
 
   const balance = totals.income - totals.expense;
+
+  const totalCurrentBalance = useMemo(() => {
+    const today = startOfDay(new Date());
+    return accounts.reduce((sum, acc) => {
+      let initialDate: Date;
+      if (acc.initialBalanceDate instanceof Timestamp) {
+        initialDate = acc.initialBalanceDate.toDate();
+      } else if (acc.initialBalanceDate) {
+        initialDate = new Date(acc.initialBalanceDate);
+      } else {
+        initialDate = new Date(0);
+      }
+      
+      if (isNaN(initialDate.getTime())) initialDate = new Date(0);
+      
+      if (isBefore(today, startOfDay(initialDate)) && !isSameDay(today, initialDate)) return sum;
+
+      let currentAccBalance = Number(acc.initialBalance) || 0;
+
+      transactions.filter(tx => tx.accountId === acc.id).forEach(tx => {
+        let txDate = tx.date instanceof Timestamp ? tx.date.toDate() : new Date(tx.date);
+        if (tx.paymentType === 'credit' && tx.dueDate) {
+          txDate = tx.dueDate instanceof Timestamp ? tx.dueDate.toDate() : new Date(tx.dueDate);
+        }
+
+        if (isNaN(txDate.getTime())) return;
+
+        if (isAfter(startOfDay(txDate), startOfDay(initialDate)) || isSameDay(txDate, initialDate)) {
+          if (isBefore(startOfDay(txDate), today) || isSameDay(txDate, today)) {
+            const amount = Number(tx.amount) || 0;
+            if (tx.type === 'income') currentAccBalance += amount;
+            else currentAccBalance -= amount;
+          }
+        }
+      });
+      return sum + currentAccBalance;
+    }, 0);
+  }, [accounts, transactions]);
 
   const categoryData = useMemo(() => {
     const data: Record<string, { name: string, value: number, color: string }> = {};
@@ -789,7 +893,7 @@ export default function App() {
               <div className="bg-indigo-600 p-2 rounded-lg">
                 <Wallet className="w-6 h-6 text-white" />
               </div>
-              <span className="text-xl font-bold tracking-tight text-indigo-900">AppFinancas</span>
+              <span className="text-xl font-bold tracking-tight text-indigo-900">FluxiaFinance</span>
             </div>
             
             <div className="flex items-center gap-4">
@@ -856,7 +960,7 @@ export default function App() {
         </div>
       </nav>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 pb-24 sm:pb-8">
         {/* Header & Month Filter */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
           <div>
@@ -924,11 +1028,17 @@ export default function App() {
         </div>
 
         {/* Summary Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
           <SummaryCard 
             title="Saldo Total" 
-            amount={balance} 
+            amount={totalCurrentBalance} 
             icon={<Wallet className="w-6 h-6" />} 
+            color="indigo"
+          />
+          <SummaryCard 
+            title="Saldo do Mês" 
+            amount={balance} 
+            icon={<TrendingUp className="w-6 h-6" />} 
             color="indigo"
           />
           <SummaryCard 
@@ -1217,6 +1327,46 @@ export default function App() {
           </div>
         </div>
       </main>
+
+      {/* Mobile Navigation Bar */}
+      <div className="sm:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 px-6 py-3 flex justify-between items-center z-40">
+        <button 
+          onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+          className="flex flex-col items-center gap-1 text-indigo-600"
+        >
+          <LayoutDashboard className="w-6 h-6" />
+          <span className="text-[10px] font-medium">Início</span>
+        </button>
+        <button 
+          onClick={() => setShowAccountModal(true)}
+          className="flex flex-col items-center gap-1 text-slate-400 hover:text-indigo-600"
+        >
+          <CreditCard className="w-6 h-6" />
+          <span className="text-[10px] font-medium">Contas</span>
+        </button>
+        <div className="relative -top-8">
+          <button 
+            onClick={() => setShowAddModal(true)}
+            className="bg-indigo-600 text-white p-4 rounded-full shadow-lg shadow-indigo-200 border-4 border-slate-50"
+          >
+            <Plus className="w-6 h-6" />
+          </button>
+        </div>
+        <button 
+          onClick={() => setShowBudgetModal(true)}
+          className="flex flex-col items-center gap-1 text-slate-400 hover:text-indigo-600"
+        >
+          <PieChartIcon className="w-6 h-6" />
+          <span className="text-[10px] font-medium">Metas</span>
+        </button>
+        <button 
+          onClick={() => setShowSettingsModal(true)}
+          className="flex flex-col items-center gap-1 text-slate-400 hover:text-indigo-600"
+        >
+          <Settings className="w-6 h-6" />
+          <span className="text-[10px] font-medium">Ajustes</span>
+        </button>
+      </div>
 
       {/* Modals */}
       <AnimatePresence>
@@ -1604,7 +1754,7 @@ function LoginView({ onLogin }: { onLogin: () => void }) {
         <div className="bg-indigo-100 w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-6">
           <Wallet className="w-8 h-8 text-indigo-600" />
         </div>
-        <h1 className="text-3xl font-bold text-slate-900 mb-2">AppFinancas</h1>
+        <h1 className="text-3xl font-bold text-slate-900 mb-2">FluxiaFinance</h1>
         <p className="text-slate-500 mb-8">Assuma o controle de sua vida financeira hoje. Simples, seguro e inteligente.</p>
         
         <button 
@@ -1706,7 +1856,7 @@ function SettingsManager({ userProfile, onUpdateProfile, onResetData }: { userPr
       </div>
 
       <div className="pt-6 border-t border-slate-100 text-center">
-        <p className="text-[10px] text-slate-400">Versão 1.2.0 • AppFinancas</p>
+        <p className="text-[10px] text-slate-400">Versão 1.2.0 • FluxiaFinance</p>
       </div>
     </div>
   );
@@ -1778,7 +1928,7 @@ function TransactionList({ transactions, categories, onDelete, onEdit }: { trans
                 <h5 className="font-semibold text-slate-900 flex items-center gap-2">
                   {tx.description || tx.category}
                   {tx.isRecurring && (
-                    <RefreshCcw className="w-3 h-3 text-indigo-500" title="Recorrente" />
+                    <RefreshCcw className="w-3 h-3 text-indigo-500" />
                   )}
                   {tx.installment && (
                     <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">
@@ -1786,7 +1936,7 @@ function TransactionList({ transactions, categories, onDelete, onEdit }: { trans
                     </span>
                   )}
                   {tx.paymentType === 'credit' && (
-                    <CreditCard className="w-3 h-3 text-slate-400" title="Cartão de Crédito" />
+                    <CreditCard className="w-3 h-3 text-slate-400" />
                   )}
                 </h5>
                 <div className="flex items-center gap-2 text-xs text-slate-500">
