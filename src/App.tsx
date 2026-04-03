@@ -126,7 +126,7 @@ interface Transaction {
   userId: string;
   accountId: string;
   amount: number;
-  type: 'income' | 'expense';
+  type: 'income' | 'expense' | 'transfer';
   paymentType: 'credit' | 'debit';
   category: string;
   description: string;
@@ -180,6 +180,7 @@ const DEFAULT_CATEGORIES: Category[] = [
   { id: '6', name: 'Saúde', icon: 'Heart', color: '#ef4444', type: 'expense' },
   { id: '7', name: 'Compras', icon: 'ShoppingBag', color: '#8b5cf6', type: 'expense' },
   { id: '8', name: 'Outros', icon: 'MoreHorizontal', color: '#6b7280', type: 'both' },
+  { id: '9', name: 'Transferência', icon: 'RefreshCcw', color: '#6366f1', type: 'both' },
 ];
 
 // Error Boundary Component
@@ -266,6 +267,7 @@ function AppContent() {
   const [dateRange, setDateRange] = useState<{ start: string; end: string } | null>(null);
   const [typeFilter, setTypeFilter] = useState<'all' | 'income' | 'expense'>('all');
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedAccountId, setSelectedAccountId] = useState<string>('all');
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [toast, setToast] = useState<{ message: string, type: 'success' | 'error' | 'info' } | null>(null);
 
@@ -529,9 +531,10 @@ function AppContent() {
         dateToUse = tx.dueDate instanceof Timestamp ? tx.dueDate.toDate() : new Date(tx.dueDate);
       }
       
-      return isWithinInterval(dateToUse, { start, end });
+      return isWithinInterval(dateToUse, { start, end }) && 
+             (selectedAccountId === 'all' || tx.accountId === selectedAccountId);
     });
-  }, [transactions, filterMonth, dateRange]);
+  }, [transactions, filterMonth, dateRange, selectedAccountId]);
 
   const displayTransactions = useMemo(() => {
     let filtered = filteredTransactions;
@@ -564,7 +567,9 @@ function AppContent() {
 
   const totalCurrentBalance = useMemo(() => {
     const today = startOfDay(new Date());
-    return accounts.reduce((sum, acc) => {
+    return accounts
+      .filter(acc => selectedAccountId === 'all' || acc.id === selectedAccountId)
+      .reduce((sum, acc) => {
       let initialDate: Date;
       if (acc.initialBalanceDate instanceof Timestamp) {
         initialDate = acc.initialBalanceDate.toDate();
@@ -639,7 +644,9 @@ function AppContent() {
     return days.map(day => {
       let totalBalance = 0;
 
-      accounts.forEach(acc => {
+      accounts
+        .filter(acc => selectedAccountId === 'all' || acc.id === selectedAccountId)
+        .forEach(acc => {
         let initialDate: Date;
         if (acc.initialBalanceDate instanceof Timestamp) {
           initialDate = acc.initialBalanceDate.toDate();
@@ -693,59 +700,90 @@ function AppContent() {
   const handleAddTransaction = async (data: any) => {
     if (!user) return;
     try {
-      const { installments, isRecurring, recurringMonths, frequency, ...baseData } = data;
+      const { installments, isRecurring, recurringMonths, frequency, toAccountId, ...baseData } = data;
       const numInstallments = parseInt(installments) || 1;
       const numRecurring = isRecurring ? (parseInt(recurringMonths) || 12) : 1;
       const totalIterations = Math.max(numInstallments, numRecurring);
       
       const groupId = totalIterations > 1 ? (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15)) : undefined;
       
-      const account = accounts.find(a => a.id === data.accountId);
-      
-      for (let i = 0; i < totalIterations; i++) {
+      // If it's a transfer, we'll handle it specially
+      if (data.type === 'transfer') {
+        const transferGroupId = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15);
         const purchaseDate = parseISO(data.date);
-        let currentDate: Date;
         
-        if (isRecurring) {
-          if (frequency === 'weekly') {
-            currentDate = addWeeks(purchaseDate, i);
-          } else if (frequency === 'yearly') {
-            currentDate = addYears(purchaseDate, i);
+        // 1. Create Expense (Source)
+        await addDoc(collection(db, 'transactions'), {
+          ...baseData,
+          type: 'expense',
+          userId: user.uid,
+          createdAt: Timestamp.now(),
+          date: Timestamp.fromDate(purchaseDate),
+          dueDate: Timestamp.fromDate(purchaseDate),
+          groupId: transferGroupId,
+          description: baseData.description || `Transferência para ${accounts.find(a => a.id === toAccountId)?.name}`
+        });
+
+        // 2. Create Income (Destination)
+        await addDoc(collection(db, 'transactions'), {
+          ...baseData,
+          type: 'income',
+          accountId: toAccountId,
+          userId: user.uid,
+          createdAt: Timestamp.now(),
+          date: Timestamp.fromDate(purchaseDate),
+          dueDate: Timestamp.fromDate(purchaseDate),
+          groupId: transferGroupId,
+          description: baseData.description || `Transferência de ${accounts.find(a => a.id === baseData.accountId)?.name}`
+        });
+      } else {
+        const account = accounts.find(a => a.id === data.accountId);
+        
+        for (let i = 0; i < totalIterations; i++) {
+          const purchaseDate = parseISO(data.date);
+          let currentDate: Date;
+          
+          if (isRecurring) {
+            if (frequency === 'weekly') {
+              currentDate = addWeeks(purchaseDate, i);
+            } else if (frequency === 'yearly') {
+              currentDate = addYears(purchaseDate, i);
+            } else {
+              currentDate = addMonths(purchaseDate, i);
+            }
           } else {
             currentDate = addMonths(purchaseDate, i);
           }
-        } else {
-          currentDate = addMonths(purchaseDate, i);
-        }
-        
-        let dueDate = currentDate;
-        if (data.paymentType === 'credit') {
-          if (i === 0 && data.dueDate) {
-            dueDate = parseISO(data.dueDate);
-          } else if ((account?.type === 'credit' || account?.type === 'hybrid') && account.closingDay && account.dueDay) {
-            dueDate = calculateDueDate(currentDate, account.closingDay, account.dueDay);
+          
+          let dueDate = currentDate;
+          if (data.paymentType === 'credit') {
+            if (i === 0 && data.dueDate) {
+              dueDate = parseISO(data.dueDate);
+            } else if ((account?.type === 'credit' || account?.type === 'hybrid') && account.closingDay && account.dueDay) {
+              dueDate = calculateDueDate(currentDate, account.closingDay, account.dueDay);
+            }
           }
+
+          const transactionData: any = {
+            ...baseData,
+            userId: user.uid,
+            createdAt: Timestamp.now(),
+            date: Timestamp.fromDate(currentDate),
+            dueDate: Timestamp.fromDate(dueDate),
+          };
+
+          if (numInstallments > 1) {
+            transactionData.installment = i + 1;
+            transactionData.totalInstallments = numInstallments;
+            transactionData.groupId = groupId;
+          } else if (isRecurring) {
+            transactionData.isRecurring = true;
+            transactionData.frequency = frequency;
+            transactionData.groupId = groupId;
+          }
+
+          await addDoc(collection(db, 'transactions'), transactionData);
         }
-
-        const transactionData: any = {
-          ...baseData,
-          userId: user.uid,
-          createdAt: Timestamp.now(),
-          date: Timestamp.fromDate(currentDate),
-          dueDate: Timestamp.fromDate(dueDate),
-        };
-
-        if (numInstallments > 1) {
-          transactionData.installment = i + 1;
-          transactionData.totalInstallments = numInstallments;
-          transactionData.groupId = groupId;
-        } else if (isRecurring) {
-          transactionData.isRecurring = true;
-          transactionData.frequency = frequency;
-          transactionData.groupId = groupId;
-        }
-
-        await addDoc(collection(db, 'transactions'), transactionData);
       }
       setShowAddModal(false);
     } catch (error) {
@@ -968,18 +1006,35 @@ function AppContent() {
             <p className="text-slate-500">Bem-vindo de volta, {(userProfile?.displayName || user.displayName)?.split(' ')[0]}!</p>
           </div>
           
-          <div className="flex flex-col sm:flex-row items-center gap-4 bg-white border border-slate-200 rounded-xl p-1 shadow-sm">
-            <div className="flex items-center">
+          <div className="flex flex-col lg:flex-row items-stretch lg:items-center gap-3 bg-white border border-slate-200 rounded-2xl p-1.5 shadow-sm w-full lg:w-auto">
+            {/* Account Filter */}
+            <div className="flex items-center gap-2 px-3 py-2 bg-slate-50 rounded-xl border border-slate-100 min-w-[160px]">
+              <CreditCard className="w-4 h-4 text-slate-400 shrink-0" />
+              <select 
+                value={selectedAccountId}
+                onChange={(e) => setSelectedAccountId(e.target.value)}
+                className="text-sm font-semibold border-none bg-transparent focus:ring-0 p-0 w-full cursor-pointer text-slate-700"
+              >
+                <option value="all">Todas as Contas</option>
+                {accounts.map(acc => (
+                  <option key={acc.id} value={acc.id}>{acc.name}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="h-6 w-px bg-slate-200 hidden lg:block" />
+
+            <div className="flex items-center justify-between bg-slate-50/50 rounded-xl lg:bg-transparent">
               <button 
                 onClick={() => {
                   setFilterMonth(subMonths(filterMonth, 1));
                   setDateRange(null);
                 }}
-                className="p-2 hover:bg-slate-50 rounded-lg transition-colors"
+                className="p-2 hover:bg-slate-100 rounded-lg transition-colors text-slate-600"
               >
                 <ChevronLeft className="w-5 h-5" />
               </button>
-              <div className="px-4 font-medium min-w-[140px] text-center capitalize">
+              <div className="px-2 font-bold min-w-[120px] text-center capitalize text-sm text-indigo-900">
                 {format(filterMonth, 'MMMM yyyy')}
               </div>
               <button 
@@ -989,35 +1044,35 @@ function AppContent() {
                   setFilterMonth(nextMonth);
                   setDateRange(null);
                 }}
-                className="p-2 hover:bg-slate-50 rounded-lg transition-colors"
+                className="p-2 hover:bg-slate-100 rounded-lg transition-colors text-slate-600"
               >
                 <ChevronRight className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="h-6 w-px bg-slate-200 mx-2 hidden sm:block" />
+            <div className="h-6 w-px bg-slate-200 hidden lg:block" />
 
-            <div className="flex items-center gap-2 px-3 py-1 bg-slate-50 rounded-lg border border-slate-100">
-              <Filter className="w-3 h-3 text-slate-400" />
-              <div className="flex items-center gap-1">
+            <div className="flex items-center gap-2 px-3 py-2 bg-slate-50 rounded-xl border border-slate-100 overflow-x-auto no-scrollbar">
+              <Filter className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+              <div className="flex items-center gap-1.5 shrink-0">
                 <input 
                   type="date"
                   value={dateRange?.start || ''}
                   onChange={(e) => setDateRange({ start: e.target.value, end: dateRange?.end || '' })}
-                  className="text-xs border-none bg-transparent focus:ring-0 p-0 w-24"
+                  className="text-[11px] font-medium border-none bg-transparent focus:ring-0 p-0 w-[85px] text-slate-600"
                 />
-                <span className="text-slate-300 text-[10px]">até</span>
+                <span className="text-slate-300 text-[10px] font-bold">→</span>
                 <input 
                   type="date"
                   value={dateRange?.end || ''}
                   onChange={(e) => setDateRange({ start: dateRange?.start || '', end: e.target.value })}
-                  className="text-xs border-none bg-transparent focus:ring-0 p-0 w-24"
+                  className="text-[11px] font-medium border-none bg-transparent focus:ring-0 p-0 w-[85px] text-slate-600"
                 />
               </div>
               {dateRange && (
                 <button 
                   onClick={() => setDateRange(null)}
-                  className="p-1 hover:bg-slate-200 rounded-full text-slate-400 hover:text-slate-600"
+                  className="p-1 hover:bg-slate-200 rounded-full text-slate-400 hover:text-slate-600 shrink-0"
                   title="Limpar Filtro"
                 >
                   <X className="w-3 h-3" />
@@ -1987,11 +2042,12 @@ function TransactionForm({ onSubmit, onCancel, categories: allCategories, accoun
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formData, setFormData] = useState({
     amount: initialData ? initialData.amount.toString() : '',
-    type: initialData ? initialData.type : 'expense' as 'income' | 'expense',
+    type: initialData ? initialData.type : 'expense' as 'income' | 'expense' | 'transfer',
     paymentType: initialData ? initialData.paymentType : 'debit' as 'credit' | 'debit',
     category: initialData ? initialData.category : '',
     description: initialData ? initialData.description : '',
     accountId: initialData ? initialData.accountId : (accounts[0]?.id || ''),
+    toAccountId: '',
     installments: initialData ? (initialData.totalInstallments?.toString() || '1') : '1',
     isRecurring: initialData ? (initialData.isRecurring || false) : false,
     frequency: initialData ? (initialData.frequency || 'monthly') : 'monthly' as 'weekly' | 'monthly' | 'yearly',
@@ -2004,15 +2060,24 @@ function TransactionForm({ onSubmit, onCancel, categories: allCategories, accoun
       : ''
   });
 
-  const categories = allCategories.filter(c => c.type === formData.type || c.type === 'both');
+  const categories = useMemo(() => {
+    return allCategories.filter(c => c.type === (formData.type === 'transfer' ? 'expense' : formData.type) || c.type === 'both');
+  }, [allCategories, formData.type]);
+
   const selectedAccount = accounts.find(a => a.id === formData.accountId);
 
   // Set default category when type changes
   useEffect(() => {
+    if (formData.type === 'transfer') {
+      if (formData.category !== 'Transferência' || formData.paymentType !== 'debit') {
+        setFormData(prev => ({ ...prev, category: 'Transferência', paymentType: 'debit' }));
+      }
+      return;
+    }
     if (categories.length > 0 && !categories.find(c => c.name === formData.category)) {
       setFormData(prev => ({ ...prev, category: categories[0].name }));
     }
-  }, [formData.type, categories]);
+  }, [formData.type, categories, formData.category, formData.paymentType]);
 
   // Update due date automatically for credit card transactions
   useEffect(() => {
@@ -2021,11 +2086,15 @@ function TransactionForm({ onSubmit, onCancel, categories: allCategories, accoun
       const calculated = calculateDueDate(new Date(formData.date + 'T12:00:00'), selectedAccount.closingDay, selectedAccount.dueDay);
       const formattedCalculated = format(calculated, 'yyyy-MM-dd');
       
-      setFormData(prev => ({ ...prev, dueDate: formattedCalculated }));
+      if (formData.dueDate !== formattedCalculated) {
+        setFormData(prev => ({ ...prev, dueDate: formattedCalculated }));
+      }
     } else if (formData.paymentType !== 'credit') {
-      setFormData(prev => ({ ...prev, dueDate: '' }));
+      if (formData.dueDate !== '') {
+        setFormData(prev => ({ ...prev, dueDate: '' }));
+      }
     }
-  }, [formData.date, formData.accountId, formData.paymentType, selectedAccount?.closingDay, selectedAccount?.dueDay]);
+  }, [formData.date, formData.accountId, formData.paymentType, selectedAccount?.closingDay, selectedAccount?.dueDay, formData.dueDate]);
 
   if (accounts.length === 0) {
     return (
@@ -2062,6 +2131,11 @@ function TransactionForm({ onSubmit, onCancel, categories: allCategories, accoun
 
       if (!formData.accountId) {
         setError("Por favor, selecione uma conta.");
+        return;
+      }
+
+      if (formData.type === 'transfer' && !formData.toAccountId) {
+        setError("Por favor, selecione a conta de destino.");
         return;
       }
 
@@ -2104,11 +2178,23 @@ function TransactionForm({ onSubmit, onCancel, categories: allCategories, accoun
         >
           Receita
         </button>
+        <button
+          type="button"
+          onClick={() => setFormData({ ...formData, type: 'transfer', category: 'Transferência' })}
+          className={cn(
+            "flex-1 py-2 rounded-lg text-sm font-semibold transition-all",
+            formData.type === 'transfer' ? "bg-white text-indigo-600 shadow-sm" : "text-slate-500 hover:text-slate-700"
+          )}
+        >
+          Transferência
+        </button>
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">Conta</label>
+          <label className="block text-sm font-medium text-slate-700 mb-1">
+            {formData.type === 'transfer' ? 'Conta de Origem' : 'Conta'}
+          </label>
           <select
             value={formData.accountId}
             onChange={(e) => setFormData({ ...formData, accountId: e.target.value })}
@@ -2119,17 +2205,34 @@ function TransactionForm({ onSubmit, onCancel, categories: allCategories, accoun
             ))}
           </select>
         </div>
-        <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">Tipo de Pagamento</label>
-          <select
-            value={formData.paymentType}
-            onChange={(e) => setFormData({ ...formData, paymentType: e.target.value as any })}
-            className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
-          >
-            <option value="debit">Débito / Dinheiro</option>
-            {(selectedAccount?.type === 'credit' || selectedAccount?.type === 'hybrid') && <option value="credit">Cartão de Crédito</option>}
-          </select>
-        </div>
+        {formData.type === 'transfer' ? (
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Conta de Destino</label>
+            <select
+              required
+              value={formData.toAccountId}
+              onChange={(e) => setFormData({ ...formData, toAccountId: e.target.value })}
+              className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+            >
+              <option value="">Selecione a conta</option>
+              {accounts.filter(a => a.id !== formData.accountId).map(a => (
+                <option key={a.id} value={a.id}>{a.name}</option>
+              ))}
+            </select>
+          </div>
+        ) : (
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Tipo de Pagamento</label>
+            <select
+              value={formData.paymentType}
+              onChange={(e) => setFormData({ ...formData, paymentType: e.target.value as any })}
+              className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+            >
+              <option value="debit">Débito / Dinheiro</option>
+              {(selectedAccount?.type === 'credit' || selectedAccount?.type === 'hybrid') && <option value="credit">Cartão de Crédito</option>}
+            </select>
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-2 gap-4">
