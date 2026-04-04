@@ -385,7 +385,7 @@ function AppContent() {
                 if ("serviceWorker" in navigator) {
                   navigator.serviceWorker.ready.then(registration => {
                     registration.showNotification("Conta a vencer em breve!", {
-                      body: `A conta "${tx.description || tx.category}" de R$${tx.amount.toFixed(2)} vence em ${format(dueDate, 'dd/MM/yyyy')}.`,
+                      body: `A conta "${tx.description || tx.category}" de ${tx.amount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} vence em ${format(dueDate, 'dd/MM/yyyy')}.`,
                       icon: "https://www.google.com/favicon.ico",
                       badge: "https://www.google.com/favicon.ico",
                       vibrate: [200, 100, 200],
@@ -394,7 +394,7 @@ function AppContent() {
                   });
                 } else {
                   new Notification("Conta a vencer em breve!", {
-                    body: `A conta "${tx.description || tx.category}" de R$${tx.amount.toFixed(2)} vence em ${format(dueDate, 'dd/MM/yyyy')}.`,
+                    body: `A conta "${tx.description || tx.category}" de ${tx.amount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} vence em ${format(dueDate, 'dd/MM/yyyy')}.`,
                     icon: "https://www.google.com/favicon.ico"
                   });
                 }
@@ -1287,7 +1287,7 @@ function AppContent() {
                       axisLine={false}
                       tickLine={false}
                       tick={{ fill: '#94a3b8', fontSize: 10 }}
-                      tickFormatter={(value) => `R$${value}`}
+                      tickFormatter={(value) => value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 })}
                     />
                     <Tooltip 
                       contentStyle={{ 
@@ -1296,7 +1296,7 @@ function AppContent() {
                         border: 'none', 
                         boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' 
                       }}
-                      formatter={(value: number) => [`R$ ${value.toFixed(2)}`, 'Saldo']}
+                      formatter={(value: number) => [value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }), 'Saldo']}
                     />
                     <Area 
                       type="monotone" 
@@ -1346,7 +1346,7 @@ function AppContent() {
                       <div className="w-3 h-3 rounded-full" style={{ backgroundColor: cat.color }} />
                       <span className="text-slate-600">{cat.name}</span>
                     </div>
-                    <span className="font-medium">${cat.value.toFixed(2)}</span>
+                    <span className="font-medium">{cat.value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
                   </div>
                 ))}
               </div>
@@ -1376,7 +1376,7 @@ function AppContent() {
                         <div>
                           <p className="text-sm font-semibold text-slate-900">{budget.category}</p>
                           <p className="text-xs text-slate-500">
-                            R${budget.spent.toFixed(2)} de R${budget.amount.toFixed(2)}
+                            {budget.spent.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} de {budget.amount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                           </p>
                         </div>
                         <span className={cn(
@@ -1979,7 +1979,7 @@ function SummaryCard({ title, amount, icon, color, trend }: { title: string, amo
       </div>
       <h4 className="text-slate-500 text-sm font-medium mb-1">{title}</h4>
       <p className="text-2xl font-bold text-slate-900">
-        ${(Number(amount) || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+        {(Number(amount) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
       </p>
     </div>
   );
@@ -2049,7 +2049,7 @@ function TransactionList({ transactions, categories, onDelete, onEdit }: { trans
                 "font-bold text-lg mr-2",
                 tx.type === 'income' ? "text-emerald-600" : "text-rose-600"
               )}>
-                {tx.type === 'income' ? '+' : '-'}${tx.amount.toFixed(2)}
+                {tx.type === 'income' ? '+' : '-'}{tx.amount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
               </span>
               <div className="flex items-center opacity-0 group-hover:opacity-100 transition-all">
                 <button 
@@ -2840,7 +2840,7 @@ function BudgetManager({ budgets, categories, currentMonth, onSave, onDelete }: 
                     </div>
                     <div>
                       <p className="font-semibold text-sm">{budget.category}</p>
-                      <p className="text-xs text-slate-500">Limite: R${budget.amount.toFixed(2)}</p>
+                      <p className="text-xs text-slate-500">Limite: {budget.amount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
                     </div>
                   </div>
                   <button 
