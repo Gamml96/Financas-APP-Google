@@ -601,7 +601,65 @@ function AppContent() {
     }, { income: 0, expense: 0 });
   }, [filteredTransactions]);
 
+  const previousPeriodTransactions = useMemo(() => {
+    let start: Date;
+    let end: Date;
+
+    if (dateRange && dateRange.start && dateRange.end) {
+      const currentStart = startOfDay(new Date(dateRange.start + 'T00:00:00'));
+      const currentEnd = new Date(dateRange.end + 'T23:59:59');
+      const duration = currentEnd.getTime() - currentStart.getTime();
+      
+      start = new Date(currentStart.getTime() - duration - 1000);
+      end = new Date(currentEnd.getTime() - duration - 1000);
+    } else {
+      const prevMonth = subMonths(filterMonth, 1);
+      start = startOfMonth(prevMonth);
+      end = endOfMonth(prevMonth);
+    }
+
+    return transactions.filter(tx => {
+      let dateToUse = tx.date instanceof Timestamp ? tx.date.toDate() : new Date(tx.date);
+      if (tx.paymentType === 'credit' && tx.dueDate) {
+        dateToUse = tx.dueDate instanceof Timestamp ? tx.dueDate.toDate() : new Date(tx.dueDate);
+      }
+      return isWithinInterval(dateToUse, { start, end }) && 
+             (selectedAccountId === 'all' || tx.accountId === selectedAccountId);
+    });
+  }, [transactions, filterMonth, dateRange, selectedAccountId]);
+
+  const previousTotals = useMemo(() => {
+    return previousPeriodTransactions.reduce((acc, tx) => {
+      const amount = Number(tx.amount) || 0;
+      if (tx.type === 'income') acc.income += amount;
+      else acc.expense += amount;
+      return acc;
+    }, { income: 0, expense: 0 });
+  }, [previousPeriodTransactions]);
+
+  const incomeTrend = useMemo(() => {
+    if (previousTotals.income === 0) return totals.income > 0 ? '+100%' : '0%';
+    const diff = ((totals.income - previousTotals.income) / previousTotals.income) * 100;
+    if (Math.abs(diff) < 0.1) return '0%';
+    return `${diff > 0 ? '+' : ''}${diff.toFixed(1)}%`;
+  }, [totals.income, previousTotals.income]);
+
+  const expenseTrend = useMemo(() => {
+    if (previousTotals.expense === 0) return totals.expense > 0 ? '+100%' : '0%';
+    const diff = ((totals.expense - previousTotals.expense) / previousTotals.expense) * 100;
+    if (Math.abs(diff) < 0.1) return '0%';
+    return `${diff > 0 ? '+' : ''}${diff.toFixed(1)}%`;
+  }, [totals.expense, previousTotals.expense]);
+
   const balance = totals.income - totals.expense;
+  const previousBalance = previousTotals.income - previousTotals.expense;
+  
+  const balanceTrend = useMemo(() => {
+    if (previousBalance === 0) return balance > 0 ? '+100%' : '0%';
+    const diff = ((balance - previousBalance) / Math.abs(previousBalance)) * 100;
+    if (Math.abs(diff) < 0.1) return '0%';
+    return `${diff > 0 ? '+' : ''}${diff.toFixed(1)}%`;
+  }, [balance, previousBalance]);
 
   const totalCurrentBalance = useMemo(() => {
     const today = startOfDay(new Date());
@@ -1135,20 +1193,21 @@ function AppContent() {
             amount={balance} 
             icon={<TrendingUp className="w-6 h-6" />} 
             color="indigo"
+            trend={balanceTrend}
           />
           <SummaryCard 
             title="Receita Mensal" 
             amount={totals.income} 
             icon={<ArrowUpRight className="w-6 h-6" />} 
             color="emerald"
-            trend="+12%"
+            trend={incomeTrend}
           />
           <SummaryCard 
             title="Despesas Mensais" 
             amount={totals.expense} 
             icon={<ArrowDownRight className="w-6 h-6" />} 
             color="rose"
-            trend="-5%"
+            trend={expenseTrend}
           />
         </div>
 
@@ -1988,6 +2047,17 @@ function SummaryCard({ title, amount, icon, color, trend }: { title: string, amo
     rose: 'bg-rose-50 text-rose-600'
   };
 
+  const getTrendColor = () => {
+    if (!trend || trend === '0%') return 'bg-slate-100 text-slate-600';
+    const isPositive = trend.startsWith('+');
+    const isNegative = trend.startsWith('-');
+    
+    if (color === 'rose') {
+      return isNegative ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700';
+    }
+    return isPositive ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700';
+  };
+
   return (
     <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow">
       <div className="flex justify-between items-start mb-4">
@@ -1997,7 +2067,7 @@ function SummaryCard({ title, amount, icon, color, trend }: { title: string, amo
         {trend && (
           <span className={cn(
             "text-xs font-bold px-2 py-1 rounded-full",
-            trend.startsWith('+') ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"
+            getTrendColor()
           )}>
             {trend}
           </span>
