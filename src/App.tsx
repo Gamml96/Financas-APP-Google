@@ -934,8 +934,10 @@ function AppContent() {
         ...data,
         updatedAt: Timestamp.now()
       });
+      setToast({ message: "Configurações salvas com sucesso!", type: 'success' });
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}`);
+      setToast({ message: "Erro ao salvar configurações.", type: 'error' });
     }
   };
 
@@ -1866,9 +1868,11 @@ function LoginView({ onLogin }: { onLogin: () => void }) {
   );
 }
 
-function SettingsManager({ userProfile, onUpdateProfile, onResetData }: { userProfile: any, onUpdateProfile: (data: any) => void, onResetData: () => void }) {
+function SettingsManager({ userProfile, onUpdateProfile, onResetData }: { userProfile: any, onUpdateProfile: (data: any) => Promise<void>, onResetData: () => void }) {
   const [name, setName] = useState(userProfile?.displayName || '');
   const [reminderDays, setReminderDays] = useState(userProfile?.reminderDaysBefore || 3);
+  const [isSavingName, setIsSavingName] = useState(false);
+  const [isSavingReminders, setIsSavingReminders] = useState(false);
 
   useEffect(() => {
     if (userProfile?.displayName) {
@@ -1878,6 +1882,24 @@ function SettingsManager({ userProfile, onUpdateProfile, onResetData }: { userPr
       setReminderDays(userProfile.reminderDaysBefore);
     }
   }, [userProfile]);
+
+  const handleSaveName = async () => {
+    setIsSavingName(true);
+    try {
+      await onUpdateProfile({ displayName: name });
+    } finally {
+      setIsSavingName(false);
+    }
+  };
+
+  const handleSaveReminders = async () => {
+    setIsSavingReminders(true);
+    try {
+      await onUpdateProfile({ reminderDaysBefore: reminderDays });
+    } finally {
+      setIsSavingReminders(false);
+    }
+  };
 
   return (
     <div className="space-y-8">
@@ -1893,12 +1915,14 @@ function SettingsManager({ userProfile, onUpdateProfile, onResetData }: { userPr
                 onChange={(e) => setName(e.target.value)}
                 placeholder="Seu nome"
                 className="flex-1 px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                disabled={isSavingName}
               />
               <button 
-                onClick={() => onUpdateProfile({ displayName: name })}
-                className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-indigo-700 transition-all"
+                onClick={handleSaveName}
+                disabled={isSavingName}
+                className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-indigo-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed min-w-[80px]"
               >
-                Salvar
+                {isSavingName ? '...' : 'Salvar'}
               </button>
             </div>
           </div>
@@ -1913,12 +1937,14 @@ function SettingsManager({ userProfile, onUpdateProfile, onResetData }: { userPr
                 value={reminderDays}
                 onChange={(e) => setReminderDays(parseInt(e.target.value) || 1)}
                 className="flex-1 px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                disabled={isSavingReminders}
               />
               <button 
-                onClick={() => onUpdateProfile({ reminderDaysBefore: reminderDays })}
-                className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-indigo-700 transition-all"
+                onClick={handleSaveReminders}
+                disabled={isSavingReminders}
+                className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-indigo-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed min-w-[80px]"
               >
-                Salvar
+                {isSavingReminders ? '...' : 'Salvar'}
               </button>
             </div>
           </div>
