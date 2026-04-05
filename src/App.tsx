@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useMemo, Component } from 'react';
+import React, { useState, useEffect, useMemo, Component, useRef } from 'react';
 import { 
   auth, 
   db, 
@@ -2479,6 +2479,7 @@ function TransactionForm({ onSubmit, onCancel, categories: allCategories, accoun
   }, [allCategories, formData.type]);
 
   const selectedAccount = accounts.find(a => a.id === formData.accountId);
+  const prevTriggers = useRef({ date: formData.date, accountId: formData.accountId, paymentType: formData.paymentType });
 
   // Set default category when type changes
   useEffect(() => {
@@ -2495,20 +2496,32 @@ function TransactionForm({ onSubmit, onCancel, categories: allCategories, accoun
 
   // Update due date automatically for credit card transactions
   useEffect(() => {
-    if (formData.paymentType === 'credit' && selectedAccount?.closingDay && selectedAccount?.dueDay) {
-      // Only recalculate if the date or account changed
-      const calculated = calculateDueDate(new Date(formData.date + 'T12:00:00'), selectedAccount.closingDay, selectedAccount.dueDay);
-      const formattedCalculated = format(calculated, 'yyyy-MM-dd');
-      
-      if (formData.dueDate !== formattedCalculated) {
-        setFormData(prev => ({ ...prev, dueDate: formattedCalculated }));
-      }
-    } else if (formData.paymentType !== 'credit') {
-      if (formData.dueDate !== '') {
-        setFormData(prev => ({ ...prev, dueDate: '' }));
+    // Only recalculate if the triggers (date, account, paymentType) actually changed
+    const triggersChanged = prevTriggers.current.date !== formData.date || 
+                            prevTriggers.current.accountId !== formData.accountId ||
+                            prevTriggers.current.paymentType !== formData.paymentType;
+
+    if (triggersChanged) {
+      prevTriggers.current = { 
+        date: formData.date, 
+        accountId: formData.accountId, 
+        paymentType: formData.paymentType 
+      };
+
+      if (formData.paymentType === 'credit' && selectedAccount?.closingDay && selectedAccount?.dueDay) {
+        const calculated = calculateDueDate(new Date(formData.date + 'T12:00:00'), selectedAccount.closingDay, selectedAccount.dueDay);
+        const formattedCalculated = format(calculated, 'yyyy-MM-dd');
+        
+        if (formData.dueDate !== formattedCalculated) {
+          setFormData(prev => ({ ...prev, dueDate: formattedCalculated }));
+        }
+      } else if (formData.paymentType !== 'credit') {
+        if (formData.dueDate !== '') {
+          setFormData(prev => ({ ...prev, dueDate: '' }));
+        }
       }
     }
-  }, [formData.date, formData.accountId, formData.paymentType, selectedAccount?.closingDay, selectedAccount?.dueDay, formData.dueDate]);
+  }, [formData.date, formData.accountId, formData.paymentType, selectedAccount?.closingDay, selectedAccount?.dueDay]);
 
   if (accounts.length === 0) {
     return (
