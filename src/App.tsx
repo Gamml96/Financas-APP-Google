@@ -623,7 +623,11 @@ function AppContent() {
     }
 
     return transactions.filter(tx => {
-      const dateToUse = tx.date instanceof Timestamp ? tx.date.toDate() : new Date(tx.date);
+      // Para cartão de crédito, usamos a data de vencimento para filtrar na dashboard,
+      // assim as parcelas aparecem no mês correto do pagamento.
+      const dateToUse = (tx.paymentType === 'credit' && tx.dueDate) 
+        ? (tx.dueDate instanceof Timestamp ? tx.dueDate.toDate() : new Date(tx.dueDate))
+        : (tx.date instanceof Timestamp ? tx.date.toDate() : new Date(tx.date));
       
       return isWithinInterval(dateToUse, { start, end }) && 
              (selectedAccountId === 'all' || tx.accountId === selectedAccountId);
@@ -933,6 +937,10 @@ function AppContent() {
         const purchaseDate = parseISO(data.date);
         if (isNaN(purchaseDate.getTime())) throw new Error("Data de compra inválida");
         
+        const totalAmount = baseData.amount;
+        const installmentAmount = numInstallments > 1 ? Math.floor((totalAmount / numInstallments) * 100) / 100 : totalAmount;
+        const remainder = numInstallments > 1 ? Math.round((totalAmount - (installmentAmount * numInstallments)) * 100) / 100 : 0;
+
         for (let i = 0; i < totalIterations; i++) {
           let currentDate: Date;
           
@@ -945,7 +953,8 @@ function AppContent() {
               currentDate = addMonths(purchaseDate, i);
             }
           } else {
-            currentDate = addMonths(purchaseDate, i);
+            // Para parcelamento, a data da compra permanece a original
+            currentDate = purchaseDate;
           }
           
           let dueDate = currentDate;
@@ -956,12 +965,20 @@ function AppContent() {
                 dueDate = parsedDueDate;
               }
             } else if ((account?.type === 'credit' || account?.type === 'hybrid') && account.closingDay && account.dueDay) {
-              dueDate = calculateDueDate(currentDate, account.closingDay, account.dueDay);
+              // Para parcelas, o vencimento deve avançar um mês a cada iteração
+              const baseDateForDueDate = addMonths(purchaseDate, i);
+              dueDate = calculateDueDate(baseDateForDueDate, account.closingDay, account.dueDay);
             }
+          }
+
+          let currentAmount = installmentAmount;
+          if (i === 0 && numInstallments > 1) {
+            currentAmount = Math.round((installmentAmount + remainder) * 100) / 100;
           }
 
           const transactionData: any = {
             ...baseData,
+            amount: currentAmount,
             userId: user.uid,
             createdAt: Timestamp.now(),
             date: Timestamp.fromDate(currentDate),
@@ -2541,7 +2558,7 @@ function TransactionForm({ onSubmit, onCancel, categories: allCategories, accoun
   useEffect(() => {
     if (selectedAccount?.type === 'credit' && formData.paymentType !== 'credit') {
       setFormData(prev => ({ ...prev, paymentType: 'credit' }));
-    } else if (selectedAccount?.type === 'debit' && formData.paymentType !== 'debit') {
+    } else if (selectedAccount?.type !== 'credit' && selectedAccount?.type !== 'hybrid' && formData.paymentType !== 'debit') {
       setFormData(prev => ({ ...prev, paymentType: 'debit' }));
     }
   }, [selectedAccount?.id, selectedAccount?.type]);
