@@ -112,7 +112,8 @@ function calculateDueDate(purchaseDate: Date, closingDay: number, dueDay: number
   // Verificamos até 3 meses para garantir que encontramos o ciclo correto
   for (let i = 0; i < 3; i++) {
     const closing = getClosingDate(candidateDueDate);
-    if (!isAfter(purchase, startOfDay(closing))) {
+    // Se a compra for ANTES do fechamento, pertence a esta fatura
+    if (isBefore(purchase, startOfDay(closing))) {
       return startOfDay(candidateDueDate);
     }
     candidateDueDate = addMonths(candidateDueDate, 1);
@@ -244,6 +245,63 @@ export default function App() {
     <ErrorBoundary>
       <AppContent />
     </ErrorBoundary>
+  );
+}
+
+function BottomNav({ activeView, setActiveView, onAdd, onAccounts, onSettings }: { 
+  activeView: string, 
+  setActiveView: (v: any) => void, 
+  onAdd: () => void,
+  onAccounts: () => void,
+  onSettings: () => void
+}) {
+  return (
+    <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 px-6 py-3 z-40 flex justify-between items-center pb-6">
+      <button 
+        onClick={() => setActiveView('dashboard')}
+        className={cn(
+          "flex flex-col items-center gap-1 transition-colors",
+          activeView === 'dashboard' ? "text-indigo-600" : "text-slate-400"
+        )}
+      >
+        <LayoutDashboard className="w-6 h-6" />
+        <span className="text-[10px] font-bold">Painel</span>
+      </button>
+      
+      <button 
+        onClick={() => setActiveView('invoices')}
+        className={cn(
+          "flex flex-col items-center gap-1 transition-colors",
+          activeView === 'invoices' ? "text-indigo-600" : "text-slate-400"
+        )}
+      >
+        <CreditCard className="w-6 h-6" />
+        <span className="text-[10px] font-bold">Faturas</span>
+      </button>
+
+      <button 
+        onClick={onAdd}
+        className="bg-indigo-600 text-white p-4 rounded-full -mt-12 shadow-lg shadow-indigo-200 border-4 border-white active:scale-95 transition-transform"
+      >
+        <Plus className="w-6 h-6" />
+      </button>
+
+      <button 
+        onClick={onAccounts}
+        className="flex flex-col items-center gap-1 text-slate-400 active:text-indigo-600 transition-colors"
+      >
+        <Wallet className="w-6 h-6" />
+        <span className="text-[10px] font-bold">Contas</span>
+      </button>
+
+      <button 
+        onClick={onSettings}
+        className="flex flex-col items-center gap-1 text-slate-400 active:text-indigo-600 transition-colors"
+      >
+        <Settings className="w-6 h-6" />
+        <span className="text-[10px] font-bold">Ajustes</span>
+      </button>
+    </div>
   );
 }
 
@@ -565,12 +623,7 @@ function AppContent() {
     }
 
     return transactions.filter(tx => {
-      let dateToUse = tx.date instanceof Timestamp ? tx.date.toDate() : new Date(tx.date);
-      
-      // Para cartões de crédito, usamos a data de vencimento para o filtro mensal
-      if (tx.paymentType === 'credit' && tx.dueDate) {
-        dateToUse = tx.dueDate instanceof Timestamp ? tx.dueDate.toDate() : new Date(tx.dueDate);
-      }
+      const dateToUse = tx.date instanceof Timestamp ? tx.date.toDate() : new Date(tx.date);
       
       return isWithinInterval(dateToUse, { start, end }) && 
              (selectedAccountId === 'all' || tx.accountId === selectedAccountId);
@@ -667,16 +720,18 @@ function AppContent() {
   const handleExportCSV = () => {
     if (displayTransactions.length === 0) return;
 
-    const headers = ['Data', 'Descrição', 'Categoria', 'Conta', 'Tipo', 'Valor', 'Status'];
+    const headers = ['Data', 'Vencimento', 'Descrição', 'Categoria', 'Conta', 'Tipo', 'Valor', 'Status'];
     const rows = displayTransactions.map(tx => {
       const date = tx.date instanceof Timestamp ? tx.date.toDate() : new Date(tx.date);
+      const dueDate = tx.dueDate ? (tx.dueDate instanceof Timestamp ? tx.dueDate.toDate() : new Date(tx.dueDate)) : null;
       const account = accounts.find(a => a.id === tx.accountId)?.name || 'N/A';
       const type = tx.type === 'income' ? 'Receita' : tx.type === 'expense' ? 'Despesa' : 'Transferência';
       const status = tx.isPaid ? 'Pago' : (tx.type === 'income' ? 'Recebido' : 'Pendente');
       
       return [
         format(date, 'dd/MM/yyyy'),
-        tx.description || tx.category,
+        dueDate ? format(dueDate, 'dd/MM/yyyy') : '-',
+        tx.description || '-',
         tx.category,
         account,
         type,
@@ -847,6 +902,7 @@ function AppContent() {
       if (data.type === 'transfer') {
         const transferGroupId = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15);
         const purchaseDate = parseISO(data.date);
+        if (isNaN(purchaseDate.getTime())) throw new Error("Data de compra inválida");
         
         // 1. Create Expense (Source)
         await addDoc(collection(db, 'transactions'), {
@@ -874,9 +930,10 @@ function AppContent() {
         });
       } else {
         const account = accounts.find(a => a.id === data.accountId);
+        const purchaseDate = parseISO(data.date);
+        if (isNaN(purchaseDate.getTime())) throw new Error("Data de compra inválida");
         
         for (let i = 0; i < totalIterations; i++) {
-          const purchaseDate = parseISO(data.date);
           let currentDate: Date;
           
           if (isRecurring) {
@@ -894,7 +951,10 @@ function AppContent() {
           let dueDate = currentDate;
           if (data.paymentType === 'credit') {
             if (i === 0 && data.dueDate) {
-              dueDate = parseISO(data.dueDate);
+              const parsedDueDate = parseISO(data.dueDate);
+              if (!isNaN(parsedDueDate.getTime())) {
+                dueDate = parsedDueDate;
+              }
             } else if ((account?.type === 'credit' || account?.type === 'hybrid') && account.closingDay && account.dueDay) {
               dueDate = calculateDueDate(currentDate, account.closingDay, account.dueDay);
             }
@@ -1072,10 +1132,10 @@ function AppContent() {
               <span className="text-xl font-bold tracking-tight text-indigo-900">FluxiaFinance</span>
             </div>
             
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 sm:gap-4">
               <button 
                 onClick={() => setShowAddModal(true)}
-                className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-xl hover:bg-indigo-700 transition-all shadow-md shadow-indigo-100 font-semibold text-sm"
+                className="hidden md:flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-xl hover:bg-indigo-700 transition-all shadow-md shadow-indigo-100 font-semibold text-sm"
               >
                 <Plus className="w-4 h-4" />
                 <span className="hidden md:inline">Novo Lançamento</span>
@@ -1094,7 +1154,7 @@ function AppContent() {
               <button 
                 onClick={() => setActiveView('dashboard')}
                 className={cn(
-                  "flex items-center gap-2 px-3 py-2 rounded-lg transition-colors",
+                  "hidden md:flex items-center gap-2 px-3 py-2 rounded-lg transition-colors",
                   activeView === 'dashboard' ? "text-indigo-600 bg-indigo-50" : "text-slate-600 hover:text-indigo-600 hover:bg-slate-50"
                 )}
               >
@@ -1104,7 +1164,7 @@ function AppContent() {
               <button 
                 onClick={() => setActiveView('invoices')}
                 className={cn(
-                  "flex items-center gap-2 px-3 py-2 rounded-lg transition-colors",
+                  "hidden md:flex items-center gap-2 px-3 py-2 rounded-lg transition-colors",
                   activeView === 'invoices' ? "text-indigo-600 bg-indigo-50" : "text-slate-600 hover:text-indigo-600 hover:bg-slate-50"
                 )}
               >
@@ -1393,6 +1453,7 @@ function AppContent() {
               <TransactionList 
                 transactions={displayTransactions} 
                 categories={allCategories}
+                accounts={accounts}
                 onDelete={handleDeleteTransaction} 
                 onEdit={setEditingTransaction}
               />
@@ -1568,51 +1629,16 @@ function AppContent() {
     )}
   </main>
 
-      {/* Mobile Navigation Bar */}
-      <div className="sm:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 px-6 py-3 flex justify-between items-center z-40">
-        <button 
-          onClick={() => setActiveView('dashboard')}
-          className={cn(
-            "flex flex-col items-center gap-1",
-            activeView === 'dashboard' ? "text-indigo-600" : "text-slate-400"
-          )}
-        >
-          <LayoutDashboard className="w-6 h-6" />
-          <span className="text-[10px] font-medium">Início</span>
-        </button>
-        <button 
-          onClick={() => setActiveView('invoices')}
-          className={cn(
-            "flex flex-col items-center gap-1",
-            activeView === 'invoices' ? "text-indigo-600" : "text-slate-400"
-          )}
-        >
-          <CreditCard className="w-6 h-6" />
-          <span className="text-[10px] font-medium">Faturas</span>
-        </button>
-        <div className="relative -top-8">
-          <button 
-            onClick={() => setShowAddModal(true)}
-            className="bg-indigo-600 text-white p-4 rounded-full shadow-lg shadow-indigo-200 border-4 border-slate-50"
-          >
-            <Plus className="w-6 h-6" />
-          </button>
-        </div>
-        <button 
-          onClick={() => setShowBudgetModal(true)}
-          className="flex flex-col items-center gap-1 text-slate-400 hover:text-indigo-600"
-        >
-          <PieChartIcon className="w-6 h-6" />
-          <span className="text-[10px] font-medium">Metas</span>
-        </button>
-        <button 
-          onClick={() => setShowSettingsModal(true)}
-          className="flex flex-col items-center gap-1 text-slate-400 hover:text-indigo-600"
-        >
-          <Settings className="w-6 h-6" />
-          <span className="text-[10px] font-medium">Ajustes</span>
-        </button>
-      </div>
+      {/* Mobile Navigation Bar - REMOVED redundant one */}
+
+      {/* Bottom Navigation for Mobile */}
+      <BottomNav 
+        activeView={activeView} 
+        setActiveView={setActiveView} 
+        onAdd={() => setShowAddModal(true)}
+        onAccounts={() => setShowAccountModal(true)}
+        onSettings={() => setShowSettingsModal(true)}
+      />
 
       {/* Modals */}
       <AnimatePresence>
@@ -2154,9 +2180,12 @@ function SummaryCard({ title, amount, icon, color, trend, alertOnNegative = fals
 
   return (
     <div className={cn(
-      "bg-white p-6 rounded-2xl border transition-all duration-300 shadow-sm hover:shadow-md",
-      isNegative && alertOnNegative ? "border-rose-300 bg-rose-50/30" : "border-slate-200"
+      "bg-white p-5 sm:p-6 rounded-2xl border transition-all duration-300 shadow-sm hover:shadow-md relative overflow-hidden",
+      isNegative && alertOnNegative ? "border-rose-200 bg-rose-50/20" : "border-slate-200"
     )}>
+      {isNegative && alertOnNegative && (
+        <div className="absolute top-0 left-0 w-1 h-full bg-rose-500" />
+      )}
       <div className="flex justify-between items-start mb-4">
         <div className={cn("p-3 rounded-xl", colors[color])}>
           {icon}
@@ -2172,21 +2201,21 @@ function SummaryCard({ title, amount, icon, color, trend, alertOnNegative = fals
           )}
           {isNegative && alertOnNegative && (
             <motion.div
-              initial={{ scale: 0.8, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              className="flex items-center gap-1 text-rose-600 bg-rose-100 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider"
+              initial={{ x: 20, opacity: 0 }}
+              animate={{ x: 0, opacity: 1 }}
+              className="flex items-center gap-1 text-rose-600 bg-rose-100 px-2 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider border border-rose-200"
             >
               <AlertTriangle className="w-3 h-3" />
-              Atenção
+              <span>Atenção</span>
             </motion.div>
           )}
         </div>
       </div>
-      <h4 className="text-slate-500 text-sm font-medium mb-1">{title}</h4>
+      <h4 className="text-slate-500 text-xs sm:text-sm font-medium mb-1">{title}</h4>
       <div className="flex items-baseline gap-2">
         <p className={cn(
-          "text-2xl font-bold",
-          isNegative && alertOnNegative ? "text-rose-600" : "text-slate-900"
+          "text-xl sm:text-2xl font-bold tracking-tight",
+          isNegative && alertOnNegative ? "text-rose-700" : "text-slate-900"
         )}>
           {(Number(amount) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
         </p>
@@ -2195,16 +2224,17 @@ function SummaryCard({ title, amount, icon, color, trend, alertOnNegative = fals
   );
 }
 
-function TransactionItem({ tx, categories, onEdit, onDelete }: { 
+function TransactionItem({ tx, categories, accounts, onEdit, onDelete }: { 
   tx: Transaction, 
   categories: Category[], 
+  accounts: Account[],
   onEdit: (tx: Transaction) => void, 
   onDelete: (id: string) => void 
 }) {
   const purchaseDate = tx.date instanceof Timestamp ? tx.date.toDate() : new Date(tx.date);
   const dueDate = tx.dueDate instanceof Timestamp ? tx.dueDate.toDate() : (tx.dueDate ? new Date(tx.dueDate) : null);
-  const displayDate = (tx.paymentType === 'credit' && dueDate) ? dueDate : purchaseDate;
   const cat = categories.find(c => c.name === tx.category) || DEFAULT_CATEGORIES[7];
+  const account = accounts.find(a => a.id === tx.accountId);
 
   return (
     <motion.div 
@@ -2233,12 +2263,16 @@ function TransactionItem({ tx, categories, onEdit, onDelete }: {
             )}
           </h5>
           <div className="flex items-center gap-2 text-xs text-slate-500">
+            <span className="font-medium text-slate-700">{account?.name || 'N/A'}</span>
+            <span>•</span>
             <span>{tx.category}</span>
             <span>•</span>
-            <span className={cn(tx.paymentType === 'credit' && "text-indigo-600 font-medium")}>
-              {format(displayDate, 'dd MMM, yyyy', { locale: ptBR })}
+            <span className="flex items-center gap-1">
+              {format(purchaseDate, 'dd MMM, yyyy', { locale: ptBR })}
               {tx.paymentType === 'credit' && dueDate && (
-                <span className="text-[10px] ml-1 opacity-70">(Vencimento)</span>
+                <span className="text-[10px] text-indigo-600 font-medium ml-1">
+                  (Venc: {format(dueDate, 'dd/MM/yyyy')})
+                </span>
               )}
             </span>
           </div>
@@ -2251,17 +2285,17 @@ function TransactionItem({ tx, categories, onEdit, onDelete }: {
         )}>
           {tx.type === 'income' ? '+' : '-'}{tx.amount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
         </span>
-        <div className="flex items-center opacity-0 group-hover:opacity-100 transition-all">
+        <div className="flex items-center md:opacity-0 md:group-hover:opacity-100 transition-all opacity-100">
           <button 
             onClick={() => onEdit(tx)}
-            className="p-2 text-slate-300 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all"
+            className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all"
             title="Edit"
           >
             <Edit className="w-4 h-4" />
           </button>
           <button 
             onClick={() => onDelete(tx.id)}
-            className="p-2 text-slate-300 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all"
+            className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all"
             title="Delete"
           >
             <Trash2 className="w-4 h-4" />
@@ -2272,7 +2306,7 @@ function TransactionItem({ tx, categories, onEdit, onDelete }: {
   );
 }
 
-function TransactionList({ transactions, categories, onDelete, onEdit }: { transactions: Transaction[], categories: Category[], onDelete: (id: string) => void, onEdit: (tx: Transaction) => void }) {
+function TransactionList({ transactions, categories, accounts, onDelete, onEdit }: { transactions: Transaction[], categories: Category[], accounts: Account[], onDelete: (id: string) => void, onEdit: (tx: Transaction) => void }) {
   if (transactions.length === 0) {
     return (
       <div className="text-center py-12">
@@ -2291,6 +2325,7 @@ function TransactionList({ transactions, categories, onDelete, onEdit }: { trans
           key={tx.id} 
           tx={tx} 
           categories={categories} 
+          accounts={accounts}
           onEdit={onEdit} 
           onDelete={onDelete} 
         />
@@ -2321,7 +2356,7 @@ function InvoiceView({ transactions, accounts, onEdit, onDelete, categories }: {
     const account = accounts.find(a => a.id === selectedAccountId);
     return transactions.filter(tx => 
       tx.accountId === selectedAccountId && 
-      (tx.paymentType === 'credit' || account?.type === 'credit')
+      (tx.paymentType === 'credit' || account?.type === 'credit' || account?.type === 'hybrid')
     );
   }, [transactions, selectedAccountId, accounts]);
 
@@ -2360,7 +2395,11 @@ function InvoiceView({ transactions, accounts, onEdit, onDelete, categories }: {
           const dateB = b.date instanceof Timestamp ? b.date.toDate() : new Date(b.date);
           return dateB.getTime() - dateA.getTime();
         }),
-        total: txs.reduce((sum, tx) => sum + Number(tx.amount), 0)
+        total: txs.reduce((sum, tx) => {
+          // Para auditoria de faturas, somamos o valor absoluto ou subtraímos se for receita?
+          // Geralmente faturas são despesas. Se houver um estorno (receita), ele subtrai do total.
+          return sum + (tx.type === 'expense' ? Number(tx.amount) : -Number(tx.amount));
+        }, 0)
       }));
   }, [invoiceTransactions, monthFilter]);
 
@@ -2375,14 +2414,14 @@ function InvoiceView({ transactions, accounts, onEdit, onDelete, categories }: {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-20 sm:pb-0">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h2 className="text-2xl font-bold text-slate-900">Auditoria de Faturas</h2>
-          <p className="text-slate-500">Visualize os gastos detalhados por fatura de cartão.</p>
+          <p className="text-slate-500 text-sm">Visualize os gastos detalhados por fatura de cartão.</p>
         </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-2 px-3 py-2 bg-white rounded-xl border border-slate-200 shadow-sm min-w-[180px]">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
+          <div className="flex items-center gap-2 px-3 py-2 bg-white rounded-xl border border-slate-200 shadow-sm">
             <CreditCard className="w-4 h-4 text-slate-400 shrink-0" />
             <select 
               value={selectedAccountId}
@@ -2395,7 +2434,7 @@ function InvoiceView({ transactions, accounts, onEdit, onDelete, categories }: {
             </select>
           </div>
 
-          <div className="flex items-center gap-2 px-3 py-2 bg-white rounded-xl border border-slate-200 shadow-sm min-w-[180px]">
+          <div className="flex items-center gap-2 px-3 py-2 bg-white rounded-xl border border-slate-200 shadow-sm">
             <Calendar className="w-4 h-4 text-slate-400 shrink-0" />
             <select 
               value={monthFilter}
@@ -2433,6 +2472,7 @@ function InvoiceView({ transactions, accounts, onEdit, onDelete, categories }: {
                   key={tx.id} 
                   tx={tx} 
                   categories={categories}
+                  accounts={accounts}
                   onEdit={onEdit} 
                   onDelete={onDelete} 
                 />
@@ -2466,12 +2506,16 @@ function TransactionForm({ onSubmit, onCancel, categories: allCategories, accoun
     isRecurring: initialData ? (initialData.isRecurring || false) : false,
     frequency: initialData ? (initialData.frequency || 'monthly') : 'monthly' as 'weekly' | 'monthly' | 'yearly',
     recurringMonths: '12',
-    date: initialData 
-      ? format(initialData.date instanceof Timestamp ? initialData.date.toDate() : new Date(initialData.date), 'yyyy-MM-dd') 
-      : format(new Date(), 'yyyy-MM-dd'),
-    dueDate: initialData?.dueDate 
-      ? format(initialData.dueDate instanceof Timestamp ? initialData.dueDate.toDate() : new Date(initialData.dueDate), 'yyyy-MM-dd') 
-      : ''
+    date: (() => {
+      if (!initialData) return format(new Date(), 'yyyy-MM-dd');
+      const d = initialData.date instanceof Timestamp ? initialData.date.toDate() : new Date(initialData.date);
+      return isNaN(d.getTime()) ? format(new Date(), 'yyyy-MM-dd') : format(d, 'yyyy-MM-dd');
+    })(),
+    dueDate: (() => {
+      if (!initialData?.dueDate) return '';
+      const d = initialData.dueDate instanceof Timestamp ? initialData.dueDate.toDate() : new Date(initialData.dueDate);
+      return isNaN(d.getTime()) ? '' : format(d, 'yyyy-MM-dd');
+    })()
   });
 
   const categories = useMemo(() => {
@@ -2508,12 +2552,15 @@ function TransactionForm({ onSubmit, onCancel, categories: allCategories, accoun
         paymentType: formData.paymentType 
       };
 
-      if (formData.paymentType === 'credit' && selectedAccount?.closingDay && selectedAccount?.dueDay) {
-        const calculated = calculateDueDate(new Date(formData.date + 'T12:00:00'), selectedAccount.closingDay, selectedAccount.dueDay);
-        const formattedCalculated = format(calculated, 'yyyy-MM-dd');
-        
-        if (formData.dueDate !== formattedCalculated) {
-          setFormData(prev => ({ ...prev, dueDate: formattedCalculated }));
+      if (formData.paymentType === 'credit' && selectedAccount?.closingDay && selectedAccount?.dueDay && formData.date) {
+        const dateObj = new Date(formData.date + 'T12:00:00');
+        if (!isNaN(dateObj.getTime())) {
+          const calculated = calculateDueDate(dateObj, selectedAccount.closingDay, selectedAccount.dueDay);
+          const formattedCalculated = format(calculated, 'yyyy-MM-dd');
+          
+          if (formData.dueDate !== formattedCalculated) {
+            setFormData(prev => ({ ...prev, dueDate: formattedCalculated }));
+          }
         }
       } else if (formData.paymentType !== 'credit') {
         if (formData.dueDate !== '') {
