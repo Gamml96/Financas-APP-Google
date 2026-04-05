@@ -2353,12 +2353,11 @@ function InvoiceView({ transactions, accounts, onEdit, onDelete, categories }: {
 
   const invoiceTransactions = useMemo(() => {
     if (!selectedAccountId) return [];
-    const account = accounts.find(a => a.id === selectedAccountId);
     return transactions.filter(tx => 
       tx.accountId === selectedAccountId && 
-      (tx.paymentType === 'credit' || account?.type === 'credit' || account?.type === 'hybrid')
+      tx.paymentType === 'credit'
     );
-  }, [transactions, selectedAccountId, accounts]);
+  }, [transactions, selectedAccountId]);
 
   const allMonths = useMemo(() => {
     const months = new Set<string>();
@@ -2538,6 +2537,15 @@ function TransactionForm({ onSubmit, onCancel, categories: allCategories, accoun
     }
   }, [formData.type, categories, formData.category, formData.paymentType]);
 
+  // Sync payment type with account type
+  useEffect(() => {
+    if (selectedAccount?.type === 'credit' && formData.paymentType !== 'credit') {
+      setFormData(prev => ({ ...prev, paymentType: 'credit' }));
+    } else if (selectedAccount?.type === 'debit' && formData.paymentType !== 'debit') {
+      setFormData(prev => ({ ...prev, paymentType: 'debit' }));
+    }
+  }, [selectedAccount?.id, selectedAccount?.type]);
+
   // Update due date automatically for credit card transactions
   useEffect(() => {
     // Only recalculate if the triggers (date, account, paymentType) actually changed
@@ -2702,7 +2710,7 @@ function TransactionForm({ onSubmit, onCancel, categories: allCategories, accoun
               onChange={(e) => setFormData({ ...formData, paymentType: e.target.value as any })}
               className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
             >
-              <option value="debit">Débito / Dinheiro</option>
+              {selectedAccount?.type !== 'credit' && <option value="debit">Débito / Dinheiro</option>}
               {(selectedAccount?.type === 'credit' || selectedAccount?.type === 'hybrid') && <option value="credit">Cartão de Crédito</option>}
             </select>
           </div>
