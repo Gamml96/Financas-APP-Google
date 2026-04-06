@@ -256,7 +256,7 @@ function BottomNav({ activeView, setActiveView, onAdd, onAccounts, onSettings }:
   onSettings: () => void
 }) {
   return (
-    <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 px-6 py-3 z-40 flex justify-between items-center pb-6">
+    <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 px-2 sm:px-6 py-3 z-40 flex justify-between items-center pb-6">
       <button 
         onClick={() => setActiveView('dashboard')}
         className={cn(
@@ -1142,11 +1142,11 @@ function AppContent() {
       <nav className="bg-white border-b border-slate-200 sticky top-0 z-30">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between h-16 items-center">
-            <div className="flex items-center gap-2">
-              <div className="bg-indigo-600 p-2 rounded-lg">
-                <Wallet className="w-6 h-6 text-white" />
+            <div className="flex items-center gap-1.5 sm:gap-2">
+              <div className="bg-indigo-600 p-1.5 sm:p-2 rounded-lg">
+                <Wallet className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
               </div>
-              <span className="text-xl font-bold tracking-tight text-indigo-900">FluxiaFinance</span>
+              <span className="text-lg sm:text-xl font-bold tracking-tight text-indigo-900 truncate max-w-[120px] sm:max-w-none">FluxiaFinance</span>
             </div>
             
             <div className="flex items-center gap-2 sm:gap-4">
@@ -1367,7 +1367,7 @@ function AppContent() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           {/* Charts Section */}
           <div className="lg:col-span-2 space-y-8">
-            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+            <div className="bg-white p-4 sm:p-6 rounded-2xl border border-slate-200 shadow-sm">
               <h3 className="text-lg font-semibold mb-6">Análise de Gastos</h3>
               <div className="h-[300px] w-full">
                 {categoryData.length > 0 ? (
@@ -1395,7 +1395,7 @@ function AppContent() {
               </div>
             </div>
 
-            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+            <div className="bg-white p-4 sm:p-6 rounded-2xl border border-slate-200 shadow-sm">
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
                 <div>
                   <h3 className="text-lg font-semibold">Transações Recentes</h3>
@@ -1479,7 +1479,7 @@ function AppContent() {
 
           {/* Sidebar Section */}
           <div className="space-y-8">
-            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+            <div className="bg-white p-4 sm:p-6 rounded-2xl border border-slate-200 shadow-sm">
               <h3 className="text-lg font-semibold mb-6">Fluxo de Caixa Diário</h3>
               <div className="h-[300px] w-full">
                 <ResponsiveContainer width="100%" height="100%">
@@ -1526,7 +1526,7 @@ function AppContent() {
               </div>
             </div>
 
-            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+            <div className="bg-white p-4 sm:p-6 rounded-2xl border border-slate-200 shadow-sm">
               <h3 className="text-lg font-semibold mb-6">Distribuição de Despesas</h3>
               <div className="h-[250px] w-full">
                 {categoryData.length > 0 ? (
@@ -1567,7 +1567,7 @@ function AppContent() {
               </div>
             </div>
 
-            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+            <div className="bg-white p-4 sm:p-6 rounded-2xl border border-slate-200 shadow-sm">
               <div className="flex justify-between items-center mb-6">
                 <h3 className="text-lg font-semibold">Orçamentos do Mês</h3>
                 <button 
@@ -2260,44 +2260,39 @@ function TransactionItem({ tx, categories, accounts, onEdit, onDelete }: {
       animate={{ opacity: 1, x: 0 }}
       className="group flex items-center justify-between p-4 rounded-xl hover:bg-slate-50 transition-colors border border-transparent hover:border-slate-100"
     >
-      <div className="flex items-center gap-4">
-        <div className="w-12 h-12 rounded-xl flex items-center justify-center text-white shadow-sm" style={{ backgroundColor: cat.color }}>
-          <Tag className="w-5 h-5" />
+      <div className="flex items-center gap-3 sm:gap-4 min-w-0 flex-1">
+        <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center text-white shadow-sm shrink-0" style={{ backgroundColor: cat.color }}>
+          <Tag className="w-4 h-4 sm:w-5 sm:h-5" />
         </div>
-        <div>
+        <div className="min-w-0 flex-1">
           <h5 className="font-semibold text-slate-900 flex items-center gap-2">
-            {tx.description || tx.category}
+            <span className="truncate">{tx.description || tx.category}</span>
             {tx.isRecurring && (
-              <RefreshCcw className="w-3 h-3 text-indigo-500" />
+              <RefreshCcw className="w-3 h-3 text-indigo-500 shrink-0" />
             )}
             {tx.installment && (
-              <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">
+              <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded shrink-0">
                 {tx.installment}/{tx.totalInstallments}
               </span>
             )}
             {tx.paymentType === 'credit' && (
-              <CreditCard className="w-3 h-3 text-slate-400" />
+              <CreditCard className="w-3 h-3 text-slate-400 shrink-0" />
             )}
           </h5>
           <div className="flex items-center gap-2 text-xs text-slate-500">
-            <span className="font-medium text-slate-700">{account?.name || 'N/A'}</span>
+            <span className="font-medium text-slate-700 truncate max-w-[80px] sm:max-w-none">{account?.name || 'N/A'}</span>
             <span>•</span>
-            <span>{tx.category}</span>
-            <span>•</span>
-            <span className="flex items-center gap-1">
-              {format(purchaseDate, 'dd MMM, yyyy', { locale: ptBR })}
-              {tx.paymentType === 'credit' && dueDate && (
-                <span className="text-[10px] text-indigo-600 font-medium ml-1">
-                  (Venc: {format(dueDate, 'dd/MM/yyyy')})
-                </span>
-              )}
+            <span className="truncate">{tx.category}</span>
+            <span className="hidden xs:inline">•</span>
+            <span className="hidden xs:flex items-center gap-1">
+              {format(purchaseDate, 'dd MMM', { locale: ptBR })}
             </span>
           </div>
         </div>
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1 sm:gap-2 shrink-0 ml-2">
         <span className={cn(
-          "font-bold text-lg mr-2",
+          "font-bold text-base sm:text-lg",
           tx.type === 'income' ? "text-emerald-600" : "text-rose-600"
         )}>
           {tx.type === 'income' ? '+' : '-'}{tx.amount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
@@ -2305,17 +2300,17 @@ function TransactionItem({ tx, categories, accounts, onEdit, onDelete }: {
         <div className="flex items-center md:opacity-0 md:group-hover:opacity-100 transition-all opacity-100">
           <button 
             onClick={() => onEdit(tx)}
-            className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all"
+            className="p-1.5 sm:p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all"
             title="Edit"
           >
-            <Edit className="w-4 h-4" />
+            <Edit className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
           </button>
           <button 
             onClick={() => onDelete(tx.id)}
-            className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all"
+            className="p-1.5 sm:p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all"
             title="Delete"
           >
-            <Trash2 className="w-4 h-4" />
+            <Trash2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
           </button>
         </div>
       </div>
@@ -2471,7 +2466,7 @@ function InvoiceView({ transactions, accounts, onEdit, onDelete, categories }: {
       <div className="grid grid-cols-1 gap-6">
         {invoices.map(invoice => (
           <div key={invoice.month} className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-            <div className="bg-slate-50 px-6 py-4 border-b border-slate-200 flex justify-between items-center">
+            <div className="bg-slate-50 px-4 sm:px-6 py-3 sm:py-4 border-b border-slate-200 flex justify-between items-center">
               <h3 className="font-bold text-slate-900 capitalize">
                 {format(parseISO(invoice.month + '-01'), 'MMMM yyyy', { locale: ptBR })}
               </h3>
