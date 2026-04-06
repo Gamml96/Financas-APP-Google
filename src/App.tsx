@@ -1772,7 +1772,7 @@ function AppContent() {
               initial={{ scale: 0.95, opacity: 0, y: 20 }}
               animate={{ scale: 1, opacity: 1, y: 0 }}
               exit={{ scale: 0.95, opacity: 0, y: 20 }}
-              className="bg-white w-full max-w-md rounded-2xl shadow-2xl relative z-10 overflow-hidden"
+              className="bg-white dark:bg-slate-900 w-full max-w-md rounded-2xl shadow-2xl relative z-10 overflow-y-auto max-h-[90vh]"
             >
               <div className="p-6">
                 <div className="flex justify-between items-center mb-6">
@@ -1852,7 +1852,7 @@ function AppContent() {
               initial={{ scale: 0.95, opacity: 0, y: 20 }}
               animate={{ scale: 1, opacity: 1, y: 0 }}
               exit={{ scale: 0.95, opacity: 0, y: 20 }}
-              className="bg-white w-full max-w-md rounded-2xl shadow-2xl relative z-10 overflow-hidden"
+              className="bg-white dark:bg-slate-900 w-full max-w-md rounded-2xl shadow-2xl relative z-10 overflow-y-auto max-h-[90vh]"
             >
               <div className="p-6">
                 <div className="flex justify-between items-center mb-6">
@@ -1889,7 +1889,7 @@ function AppContent() {
               initial={{ scale: 0.95, opacity: 0, y: 20 }}
               animate={{ scale: 1, opacity: 1, y: 0 }}
               exit={{ scale: 0.95, opacity: 0, y: 20 }}
-              className="bg-white w-full max-w-md rounded-2xl shadow-2xl relative z-10 overflow-hidden"
+              className="bg-white dark:bg-slate-900 w-full max-w-md rounded-2xl shadow-2xl relative z-10 overflow-y-auto max-h-[90vh]"
             >
               <div className="p-6">
                 <div className="flex justify-between items-center mb-6">
@@ -1926,7 +1926,7 @@ function AppContent() {
               initial={{ scale: 0.95, opacity: 0, y: 20 }}
               animate={{ scale: 1, opacity: 1, y: 0 }}
               exit={{ scale: 0.95, opacity: 0, y: 20 }}
-              className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl relative z-10 overflow-hidden"
+              className="bg-white dark:bg-slate-900 w-full max-w-2xl rounded-2xl shadow-2xl relative z-10 overflow-y-auto max-h-[90vh]"
             >
               <div className="p-6">
                 <div className="flex justify-between items-center mb-6">
@@ -1977,7 +1977,7 @@ function AppContent() {
               initial={{ scale: 0.95, opacity: 0, y: 20 }}
               animate={{ scale: 1, opacity: 1, y: 0 }}
               exit={{ scale: 0.95, opacity: 0, y: 20 }}
-              className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl relative z-10 overflow-hidden"
+              className="bg-white dark:bg-slate-900 w-full max-w-2xl rounded-2xl shadow-2xl relative z-10 overflow-y-auto max-h-[90vh]"
             >
               <div className="p-6">
                 <div className="flex justify-between items-center mb-6">
@@ -2013,7 +2013,7 @@ function AppContent() {
               initial={{ scale: 0.95, opacity: 0, y: 20 }}
               animate={{ scale: 1, opacity: 1, y: 0 }}
               exit={{ scale: 0.95, opacity: 0, y: 20 }}
-              className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl relative z-10 overflow-hidden"
+              className="bg-white dark:bg-slate-900 w-full max-w-2xl rounded-2xl shadow-2xl relative z-10 overflow-y-auto max-h-[90vh]"
             >
               <div className="p-6">
                 <div className="flex justify-between items-center mb-6">
@@ -2048,7 +2048,7 @@ function AppContent() {
               initial={{ scale: 0.95, opacity: 0, y: 20 }}
               animate={{ scale: 1, opacity: 1, y: 0 }}
               exit={{ scale: 0.95, opacity: 0, y: 20 }}
-              className="bg-white w-full max-w-lg rounded-2xl shadow-2xl relative z-10 overflow-hidden"
+              className="bg-white dark:bg-slate-900 w-full max-w-lg rounded-2xl shadow-2xl relative z-10 overflow-y-auto max-h-[90vh]"
             >
               <div className="p-6">
                 <div className="flex justify-between items-center mb-6">
@@ -2083,7 +2083,7 @@ function AppContent() {
               initial={{ scale: 0.95, opacity: 0, y: 20 }}
               animate={{ scale: 1, opacity: 1, y: 0 }}
               exit={{ scale: 0.95, opacity: 0, y: 20 }}
-              className="bg-white dark:bg-slate-900 w-full max-w-md rounded-2xl shadow-2xl relative z-10 overflow-hidden border border-slate-200 dark:border-slate-800"
+              className="bg-white dark:bg-slate-900 w-full max-w-md rounded-2xl shadow-2xl relative z-10 overflow-y-auto max-h-[90vh] border border-slate-200 dark:border-slate-800"
             >
               <div className="p-8 text-center">
                 <div className="w-16 h-16 bg-rose-100 dark:bg-rose-900/40 text-rose-600 dark:text-rose-400 rounded-2xl flex items-center justify-center mx-auto mb-6">
