@@ -2371,11 +2371,11 @@ function TransactionItem({ tx, categories, accounts, onEdit, onDelete }: {
               <CreditCard className="w-3 h-3 text-slate-400 shrink-0" />
             )}
           </h5>
-          <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
-            <span className="font-medium text-slate-700 dark:text-slate-300 truncate max-w-[80px] sm:max-w-none">{account?.name || 'N/A'}</span>
-            <span>•</span>
-            <span className="truncate">{tx.category}</span>
-            <span>•</span>
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] sm:text-xs text-slate-500 dark:text-slate-400">
+            <span className="font-medium text-slate-700 dark:text-slate-300 truncate max-w-[100px] sm:max-w-none">{account?.name || 'N/A'}</span>
+            <span className="text-slate-300 dark:text-slate-700">•</span>
+            <span className="truncate max-w-[100px] sm:max-w-none">{tx.category}</span>
+            <span className="text-slate-300 dark:text-slate-700">•</span>
             <span className="flex items-center gap-1 shrink-0">
               <Calendar className="w-3 h-3 text-slate-400" />
               {format(purchaseDate, 'dd/MM/yy', { locale: ptBR })}
