@@ -901,81 +901,87 @@ function AppContent() {
       const totalIterations = Math.max(numInstallments, numRecurring);
       
       const groupId = totalIterations > 1 ? (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15)) : undefined;
+      const purchaseDate = parseISO(data.date);
+      if (isNaN(purchaseDate.getTime())) throw new Error("Data de compra inválida");
       
-      // If it's a transfer, we'll handle it specially
-      if (data.type === 'transfer') {
-        const transferGroupId = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15);
-        const purchaseDate = parseISO(data.date);
-        if (isNaN(purchaseDate.getTime())) throw new Error("Data de compra inválida");
-        
-        // 1. Create Expense (Source)
-        await addDoc(collection(db, 'transactions'), {
-          ...baseData,
-          type: 'expense',
-          userId: user.uid,
-          createdAt: Timestamp.now(),
-          date: Timestamp.fromDate(purchaseDate),
-          dueDate: Timestamp.fromDate(purchaseDate),
-          groupId: transferGroupId,
-          description: baseData.description || `Transferência para ${accounts.find(a => a.id === toAccountId)?.name}`
-        });
+      const account = accounts.find(a => a.id === data.accountId);
+      const totalAmount = baseData.amount;
+      const installmentAmount = numInstallments > 1 ? Math.floor((totalAmount / numInstallments) * 100) / 100 : totalAmount;
+      const remainder = numInstallments > 1 ? Math.round((totalAmount - (installmentAmount * numInstallments)) * 100) / 100 : 0;
 
-        // 2. Create Income (Destination)
-        await addDoc(collection(db, 'transactions'), {
-          ...baseData,
-          type: 'income',
-          accountId: toAccountId,
-          userId: user.uid,
-          createdAt: Timestamp.now(),
-          date: Timestamp.fromDate(purchaseDate),
-          dueDate: Timestamp.fromDate(purchaseDate),
-          groupId: transferGroupId,
-          description: baseData.description || `Transferência de ${accounts.find(a => a.id === baseData.accountId)?.name}`
-        });
-      } else {
-        const account = accounts.find(a => a.id === data.accountId);
-        const purchaseDate = parseISO(data.date);
-        if (isNaN(purchaseDate.getTime())) throw new Error("Data de compra inválida");
+      for (let i = 0; i < totalIterations; i++) {
+        let currentDate: Date;
         
-        const totalAmount = baseData.amount;
-        const installmentAmount = numInstallments > 1 ? Math.floor((totalAmount / numInstallments) * 100) / 100 : totalAmount;
-        const remainder = numInstallments > 1 ? Math.round((totalAmount - (installmentAmount * numInstallments)) * 100) / 100 : 0;
-
-        for (let i = 0; i < totalIterations; i++) {
-          let currentDate: Date;
-          
-          if (isRecurring) {
-            if (frequency === 'weekly') {
-              currentDate = addWeeks(purchaseDate, i);
-            } else if (frequency === 'yearly') {
-              currentDate = addYears(purchaseDate, i);
-            } else {
-              currentDate = addMonths(purchaseDate, i);
-            }
+        if (isRecurring) {
+          if (frequency === 'weekly') {
+            currentDate = addWeeks(purchaseDate, i);
+          } else if (frequency === 'yearly') {
+            currentDate = addYears(purchaseDate, i);
           } else {
-            // Para parcelamento, a data da compra permanece a original
-            currentDate = purchaseDate;
+            currentDate = addMonths(purchaseDate, i);
           }
-          
-          let dueDate = currentDate;
-          if (data.paymentType === 'credit') {
-            if (i === 0 && data.dueDate) {
-              const parsedDueDate = parseISO(data.dueDate);
-              if (!isNaN(parsedDueDate.getTime())) {
-                dueDate = parsedDueDate;
-              }
-            } else if ((account?.type === 'credit' || account?.type === 'hybrid') && account.closingDay && account.dueDay) {
-              // Para parcelas, o vencimento deve avançar um mês a cada iteração
-              const baseDateForDueDate = addMonths(purchaseDate, i);
-              dueDate = calculateDueDate(baseDateForDueDate, account.closingDay, account.dueDay);
+        } else {
+          currentDate = purchaseDate;
+        }
+        
+        let dueDate = currentDate;
+        if (data.paymentType === 'credit') {
+          if (i === 0 && data.dueDate) {
+            const parsedDueDate = parseISO(data.dueDate);
+            if (!isNaN(parsedDueDate.getTime())) {
+              dueDate = parsedDueDate;
             }
+          } else if ((account?.type === 'credit' || account?.type === 'hybrid') && account.closingDay && account.dueDay) {
+            const baseDateForDueDate = addMonths(purchaseDate, i);
+            dueDate = calculateDueDate(baseDateForDueDate, account.closingDay, account.dueDay);
           }
+        }
 
-          let currentAmount = installmentAmount;
-          if (i === 0 && numInstallments > 1) {
-            currentAmount = Math.round((installmentAmount + remainder) * 100) / 100;
+        let currentAmount = installmentAmount;
+        if (i === 0 && numInstallments > 1) {
+          currentAmount = Math.round((installmentAmount + remainder) * 100) / 100;
+        }
+
+        if (data.type === 'transfer') {
+          const transferGroupId = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15);
+          
+          // 1. Create Expense (Source)
+          const sourceData: any = {
+            ...baseData,
+            amount: currentAmount,
+            type: 'expense',
+            userId: user.uid,
+            createdAt: Timestamp.now(),
+            date: Timestamp.fromDate(currentDate),
+            dueDate: Timestamp.fromDate(dueDate),
+            groupId: totalIterations > 1 ? groupId : transferGroupId,
+            description: baseData.description || `Transferência para ${accounts.find(a => a.id === toAccountId)?.name}`
+          };
+          if (isRecurring) {
+            sourceData.isRecurring = true;
+            sourceData.frequency = frequency;
           }
+          await addDoc(collection(db, 'transactions'), sourceData);
 
+          // 2. Create Income (Destination)
+          const destData: any = {
+            ...baseData,
+            amount: currentAmount,
+            type: 'income',
+            accountId: toAccountId,
+            userId: user.uid,
+            createdAt: Timestamp.now(),
+            date: Timestamp.fromDate(currentDate),
+            dueDate: Timestamp.fromDate(dueDate),
+            groupId: totalIterations > 1 ? groupId : transferGroupId,
+            description: baseData.description || `Transferência de ${accounts.find(a => a.id === baseData.accountId)?.name}`
+          };
+          if (isRecurring) {
+            destData.isRecurring = true;
+            destData.frequency = frequency;
+          }
+          await addDoc(collection(db, 'transactions'), destData);
+        } else {
           const transactionData: any = {
             ...baseData,
             amount: currentAmount,
@@ -2803,25 +2809,39 @@ function TransactionForm({ onSubmit, onCancel, categories: allCategories, accoun
       </div>
 
       {formData.paymentType !== 'credit' && (
-        <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
-          <label className="flex items-center gap-3 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={formData.isRecurring}
-              onChange={(e) => setFormData({ ...formData, isRecurring: e.target.checked })}
-              className="w-5 h-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-            />
-            <span className="text-sm font-medium text-slate-700">Repetir transação</span>
-          </label>
+        <div className="p-4 bg-slate-50/50 rounded-2xl border border-slate-100 transition-all">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <RefreshCcw className={cn("w-4 h-4", formData.isRecurring ? "text-indigo-600" : "text-slate-400")} />
+              <span className="text-sm font-semibold text-slate-700">Repetir transação</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setFormData({ ...formData, isRecurring: !formData.isRecurring })}
+              className={cn(
+                "w-10 h-5 rounded-full transition-all relative",
+                formData.isRecurring ? "bg-indigo-600" : "bg-slate-300"
+              )}
+            >
+              <div className={cn(
+                "absolute top-1 w-3 h-3 bg-white rounded-full transition-all shadow-sm",
+                formData.isRecurring ? "right-1" : "left-1"
+              )} />
+            </button>
+          </div>
 
           {formData.isRecurring && (
-            <div className="grid grid-cols-2 gap-4 mt-4">
+            <motion.div 
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              className="grid grid-cols-2 gap-4 mt-4 pt-4 border-t border-slate-200/60"
+            >
               <div>
-                <label className="block text-xs font-medium text-slate-500 mb-1">Frequência</label>
+                <label className="block text-[10px] uppercase tracking-wider font-bold text-slate-400 mb-1">Frequência</label>
                 <select
                   value={formData.frequency}
                   onChange={(e) => setFormData({ ...formData, frequency: e.target.value as any })}
-                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm outline-none"
+                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500/20"
                 >
                   <option value="weekly">Semanal</option>
                   <option value="monthly">Mensal</option>
@@ -2829,17 +2849,17 @@ function TransactionForm({ onSubmit, onCancel, categories: allCategories, accoun
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-medium text-slate-500 mb-1">Repetir por (vezes)</label>
+                <label className="block text-[10px] uppercase tracking-wider font-bold text-slate-400 mb-1">Repetir por (vezes)</label>
                 <input
                   type="number"
                   min="2"
                   max="60"
                   value={formData.recurringMonths}
                   onChange={(e) => setFormData({ ...formData, recurringMonths: e.target.value })}
-                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm outline-none"
+                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500/20"
                 />
               </div>
-            </div>
+            </motion.div>
           )}
         </div>
       )}
