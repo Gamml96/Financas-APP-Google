@@ -281,7 +281,7 @@ function BottomNav({ activeView, setActiveView, onAdd, onAccounts, onSettings }:
 
       <button 
         onClick={onAdd}
-        className="bg-indigo-600 text-white p-4 rounded-full -mt-12 shadow-lg shadow-indigo-200 border-4 border-white active:scale-95 transition-transform"
+        className="bg-indigo-50 text-indigo-600 p-4 rounded-full -mt-12 shadow-md shadow-indigo-100 border-4 border-white active:scale-95 transition-all"
       >
         <Plus className="w-6 h-6" />
       </button>
@@ -1152,7 +1152,7 @@ function AppContent() {
             <div className="flex items-center gap-2 sm:gap-4">
               <button 
                 onClick={() => setShowAddModal(true)}
-                className="hidden md:flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-xl hover:bg-indigo-700 transition-all shadow-md shadow-indigo-100 font-semibold text-sm"
+                className="hidden md:flex items-center gap-2 text-slate-600 hover:text-indigo-600 hover:bg-indigo-50/50 px-4 py-2 rounded-xl transition-all font-semibold text-sm active:scale-95"
               >
                 <Plus className="w-4 h-4" />
                 <span className="hidden md:inline">Novo Lançamento</span>
@@ -1459,7 +1459,7 @@ function AppContent() {
                   </button>
                   <button 
                     onClick={() => setShowAddModal(true)}
-                    className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-xl hover:bg-indigo-700 transition-all shadow-md shadow-indigo-100"
+                    className="flex items-center gap-2 bg-indigo-50 text-indigo-600 px-4 py-2 rounded-xl hover:bg-indigo-100 transition-all font-semibold text-sm active:scale-95"
                   >
                     <Plus className="w-4 h-4" />
                     <span>Adicionar Nova</span>
