@@ -252,58 +252,69 @@ export default function App() {
   );
 }
 
-function BottomNav({ activeView, setActiveView, onAdd, onAccounts, onSettings }: { 
+function BottomNav({ activeView, setActiveView, onAdd, onAccounts, onCategories, onSettings }: { 
   activeView: string, 
   setActiveView: (v: any) => void, 
   onAdd: () => void,
   onAccounts: () => void,
+  onCategories: () => void,
   onSettings: () => void
 }) {
   return (
-    <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 px-2 sm:px-6 py-3 z-40 flex justify-between items-center pb-6">
+    <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 px-1 py-3 z-40 flex justify-between items-center pb-6">
       <button 
         onClick={() => setActiveView('dashboard')}
         className={cn(
-          "flex flex-col items-center gap-1 transition-colors",
+          "flex flex-col items-center gap-1 flex-1 transition-colors",
           activeView === 'dashboard' ? "text-indigo-600" : "text-slate-400 dark:text-slate-500"
         )}
       >
-        <LayoutDashboard className="w-6 h-6" />
-        <span className="text-[10px] font-bold">Painel</span>
+        <LayoutDashboard className="w-5 h-5" />
+        <span className="text-[9px] font-bold">Painel</span>
       </button>
       
       <button 
         onClick={() => setActiveView('invoices')}
         className={cn(
-          "flex flex-col items-center gap-1 transition-colors",
+          "flex flex-col items-center gap-1 flex-1 transition-colors",
           activeView === 'invoices' ? "text-indigo-600" : "text-slate-400 dark:text-slate-500"
         )}
       >
-        <CreditCard className="w-6 h-6" />
-        <span className="text-[10px] font-bold">Faturas</span>
+        <CreditCard className="w-5 h-5" />
+        <span className="text-[9px] font-bold">Faturas</span>
       </button>
 
       <button 
-        onClick={onAdd}
-        className="bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 p-4 rounded-full -mt-12 shadow-md shadow-indigo-100 dark:shadow-none border-4 border-white dark:border-slate-900 active:scale-95 transition-all"
+        onClick={onCategories}
+        className="flex flex-col items-center gap-1 flex-1 text-slate-400 dark:text-slate-500 active:text-indigo-600 transition-colors"
       >
-        <Plus className="w-6 h-6" />
+        <Tag className="w-5 h-5" />
+        <span className="text-[9px] font-bold">Categorias</span>
       </button>
+
+      <div className="flex-1 flex justify-center">
+        <button 
+          onClick={onAdd}
+          className="bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 p-3 rounded-full -mt-10 shadow-md shadow-indigo-100 dark:shadow-none border-4 border-white dark:border-slate-900 active:scale-95 transition-all"
+        >
+          <Plus className="w-6 h-6" />
+        </button>
+      </div>
 
       <button 
         onClick={onAccounts}
-        className="flex flex-col items-center gap-1 text-slate-400 dark:text-slate-500 active:text-indigo-600 transition-colors"
+        className="flex flex-col items-center gap-1 flex-1 text-slate-400 dark:text-slate-500 active:text-indigo-600 transition-colors"
       >
-        <Wallet className="w-6 h-6" />
-        <span className="text-[10px] font-bold">Contas</span>
+        <Wallet className="w-5 h-5" />
+        <span className="text-[9px] font-bold">Contas</span>
       </button>
 
       <button 
         onClick={onSettings}
-        className="flex flex-col items-center gap-1 text-slate-400 dark:text-slate-500 active:text-indigo-600 transition-colors"
+        className="flex flex-col items-center gap-1 flex-1 text-slate-400 dark:text-slate-500 active:text-indigo-600 transition-colors"
       >
-        <Settings className="w-6 h-6" />
-        <span className="text-[10px] font-bold">Ajustes</span>
+        <Settings className="w-5 h-5" />
+        <span className="text-[9px] font-bold">Ajustes</span>
       </button>
     </div>
   );
@@ -1742,6 +1753,7 @@ function AppContent() {
         setActiveView={setActiveView} 
         onAdd={() => setShowAddModal(true)}
         onAccounts={() => setShowAccountModal(true)}
+        onCategories={() => setShowCategoryModal(true)}
         onSettings={() => setShowSettingsModal(true)}
       />
 
