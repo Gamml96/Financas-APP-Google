@@ -59,7 +59,8 @@ import {
   CheckCircle2,
   AlertCircle,
   Sun,
-  Moon
+  Moon,
+  Star
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -156,6 +157,7 @@ interface Account {
   closingDay?: number;
   dueDay?: number;
   color: string;
+  isFavorite?: boolean;
   createdAt: any;
 }
 
@@ -1036,11 +1038,28 @@ function AppContent() {
   const handleAddAccount = async (data: Omit<Account, 'id' | 'createdAt'>) => {
     if (!user) return;
     try {
-      await addDoc(collection(db, 'accounts'), {
-        ...data,
-        userId: user.uid,
-        createdAt: Timestamp.now()
-      });
+      if (data.isFavorite) {
+        // Unset other favorites
+        const batch = writeBatch(db);
+        accounts.forEach(acc => {
+          if (acc.isFavorite) {
+            batch.update(doc(db, 'accounts', acc.id), { isFavorite: false });
+          }
+        });
+        const newDocRef = doc(collection(db, 'accounts'));
+        batch.set(newDocRef, {
+          ...data,
+          userId: user.uid,
+          createdAt: Timestamp.now()
+        });
+        await batch.commit();
+      } else {
+        await addDoc(collection(db, 'accounts'), {
+          ...data,
+          userId: user.uid,
+          createdAt: Timestamp.now()
+        });
+      }
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, 'accounts');
     }
@@ -1049,10 +1068,25 @@ function AppContent() {
   const handleUpdateAccount = async (id: string, data: Partial<Account>) => {
     if (!user) return;
     try {
-      await updateDoc(doc(db, 'accounts', id), {
-        ...data,
-        updatedAt: Timestamp.now()
-      });
+      if (data.isFavorite) {
+        // Unset other favorites
+        const batch = writeBatch(db);
+        accounts.forEach(acc => {
+          if (acc.id !== id && acc.isFavorite) {
+            batch.update(doc(db, 'accounts', acc.id), { isFavorite: false });
+          }
+        });
+        batch.update(doc(db, 'accounts', id), {
+          ...data,
+          updatedAt: Timestamp.now()
+        });
+        await batch.commit();
+      } else {
+        await updateDoc(doc(db, 'accounts', id), {
+          ...data,
+          updatedAt: Timestamp.now()
+        });
+      }
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `accounts/${id}`);
     }
@@ -2409,12 +2443,16 @@ function InvoiceView({ transactions, accounts, onEdit, onDelete, categories }: {
   categories: Category[]
 }) {
   const creditAccounts = accounts.filter(acc => acc.type === 'credit' || acc.type === 'hybrid');
-  const [selectedAccountId, setSelectedAccountId] = useState<string>(creditAccounts[0]?.id || '');
+  const [selectedAccountId, setSelectedAccountId] = useState<string>(() => {
+    const favorite = creditAccounts.find(a => a.isFavorite);
+    return favorite?.id || creditAccounts[0]?.id || '';
+  });
   const [monthFilter, setMonthFilter] = useState<string>('all');
 
   useEffect(() => {
     if (!selectedAccountId && creditAccounts.length > 0) {
-      setSelectedAccountId(creditAccounts[0].id);
+      const favorite = creditAccounts.find(a => a.isFavorite);
+      setSelectedAccountId(favorite?.id || creditAccounts[0].id);
     }
   }, [creditAccounts, selectedAccountId]);
 
@@ -2566,7 +2604,7 @@ function TransactionForm({ onSubmit, onCancel, categories: allCategories, accoun
     paymentType: initialData ? initialData.paymentType : 'debit' as 'credit' | 'debit',
     category: initialData ? initialData.category : '',
     description: initialData ? initialData.description : '',
-    accountId: initialData ? initialData.accountId : (accounts[0]?.id || ''),
+    accountId: initialData ? initialData.accountId : (accounts.find(a => a.isFavorite)?.id || accounts[0]?.id || ''),
     toAccountId: '',
     installments: initialData ? (initialData.totalInstallments?.toString() || '1') : '1',
     isRecurring: initialData ? (initialData.isRecurring || false) : false,
@@ -2585,7 +2623,9 @@ function TransactionForm({ onSubmit, onCancel, categories: allCategories, accoun
   });
 
   const categories = useMemo(() => {
-    return allCategories.filter(c => c.type === (formData.type === 'transfer' ? 'expense' : formData.type) || c.type === 'both');
+    return allCategories
+      .filter(c => c.type === (formData.type === 'transfer' ? 'expense' : formData.type) || c.type === 'both')
+      .sort((a, b) => a.name.localeCompare(b.name));
   }, [allCategories, formData.type]);
 
   const selectedAccount = accounts.find(a => a.id === formData.accountId);
@@ -2953,11 +2993,12 @@ function AccountManager({ accounts, onAdd, onUpdate, onDelete }: { accounts: Acc
     name: '',
     type: 'checking' as 'checking' | 'savings' | 'credit' | 'hybrid',
     balance: 0,
-    initialBalance: 0,
+    initialBalance: '0',
     initialBalanceDate: format(new Date(), 'yyyy-MM-dd'),
-    closingDay: 5,
-    dueDay: 15,
-    color: '#6366f1'
+    closingDay: '5',
+    dueDay: '15',
+    color: '#6366f1',
+    isFavorite: false
   });
 
   const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#8b5cf6', '#06b6d4', '#64748b'];
@@ -2968,11 +3009,12 @@ function AccountManager({ accounts, onAdd, onUpdate, onDelete }: { accounts: Acc
       name: '', 
       type: 'checking', 
       balance: 0, 
-      initialBalance: 0,
+      initialBalance: '0',
       initialBalanceDate: format(new Date(), 'yyyy-MM-dd'),
-      closingDay: 5, 
-      dueDay: 15, 
-      color: '#6366f1' 
+      closingDay: '5', 
+      dueDay: '15', 
+      color: '#6366f1',
+      isFavorite: false
     });
   };
 
@@ -3017,7 +3059,7 @@ function AccountManager({ accounts, onAdd, onUpdate, onDelete }: { accounts: Acc
                 type="number"
                 step="0.01"
                 value={newAcc.initialBalance}
-                onChange={(e) => setNewAcc({ ...newAcc, initialBalance: parseFloat(e.target.value) || 0 })}
+                onChange={(e) => setNewAcc({ ...newAcc, initialBalance: e.target.value })}
                 className="w-full pl-8 pr-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500 text-slate-900 dark:text-slate-100"
                 placeholder="0,00"
               />
@@ -3042,8 +3084,8 @@ function AccountManager({ accounts, onAdd, onUpdate, onDelete }: { accounts: Acc
                 type="number"
                 min="1"
                 max="31"
-                value={isNaN(newAcc.closingDay) ? '' : newAcc.closingDay}
-                onChange={(e) => setNewAcc({ ...newAcc, closingDay: parseInt(e.target.value) })}
+                value={newAcc.closingDay}
+                onChange={(e) => setNewAcc({ ...newAcc, closingDay: e.target.value })}
                 className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500 text-slate-900 dark:text-slate-100"
               />
             </div>
@@ -3053,8 +3095,8 @@ function AccountManager({ accounts, onAdd, onUpdate, onDelete }: { accounts: Acc
                 type="number"
                 min="1"
                 max="31"
-                value={isNaN(newAcc.dueDay) ? '' : newAcc.dueDay}
-                onChange={(e) => setNewAcc({ ...newAcc, dueDay: parseInt(e.target.value) })}
+                value={newAcc.dueDay}
+                onChange={(e) => setNewAcc({ ...newAcc, dueDay: e.target.value })}
                 className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500 text-slate-900 dark:text-slate-100"
               />
             </div>
@@ -3079,6 +3121,23 @@ function AccountManager({ accounts, onAdd, onUpdate, onDelete }: { accounts: Acc
           </div>
         </div>
 
+        <div className="mt-4 flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setNewAcc({ ...newAcc, isFavorite: !newAcc.isFavorite })}
+            className={cn(
+              "flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all",
+              newAcc.isFavorite 
+                ? "bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800" 
+                : "bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700"
+            )}
+          >
+            <Star className={cn("w-4 h-4", newAcc.isFavorite && "fill-current")} />
+            {newAcc.isFavorite ? 'Conta Favorita' : 'Marcar como Favorita'}
+          </button>
+          <p className="text-[10px] text-slate-400 dark:text-slate-500">A conta favorita será pré-selecionada em novos lançamentos.</p>
+        </div>
+
         <div className="flex gap-3 mt-6">
           {editingId && (
             <button
@@ -3093,6 +3152,9 @@ function AccountManager({ accounts, onAdd, onUpdate, onDelete }: { accounts: Acc
               if (newAcc.name) {
                 const data = {
                   ...newAcc,
+                  initialBalance: parseFloat(newAcc.initialBalance) || 0,
+                  closingDay: parseInt(newAcc.closingDay) || 5,
+                  dueDay: parseInt(newAcc.dueDay) || 15,
                   initialBalanceDate: Timestamp.fromDate(new Date(newAcc.initialBalanceDate + 'T12:00:00'))
                 };
                 if (editingId) {
@@ -3119,7 +3181,12 @@ function AccountManager({ accounts, onAdd, onUpdate, onDelete }: { accounts: Acc
                 <CreditCard className="w-5 h-5" />
               </div>
               <div>
-                <p className="font-semibold text-sm text-slate-900 dark:text-slate-100">{acc.name}</p>
+                <div className="flex items-center gap-2">
+                  <p className="font-semibold text-sm text-slate-900 dark:text-slate-100">{acc.name}</p>
+                  {acc.isFavorite && (
+                    <Star className="w-3 h-3 text-amber-500 fill-current" />
+                  )}
+                </div>
                 <p className="text-xs text-slate-500 dark:text-slate-400 capitalize">
                   {acc.type === 'checking' ? 'Corrente' : 
                    acc.type === 'savings' ? 'Poupança' : 
@@ -3150,11 +3217,12 @@ function AccountManager({ accounts, onAdd, onUpdate, onDelete }: { accounts: Acc
                     name: acc.name,
                     type: acc.type,
                     balance: acc.balance,
-                    initialBalance: acc.initialBalance || 0,
+                    initialBalance: (acc.initialBalance || 0).toString(),
                     initialBalanceDate: format(initialDate, 'yyyy-MM-dd'),
-                    closingDay: acc.closingDay || 5,
-                    dueDay: acc.dueDay || 15,
-                    color: acc.color
+                    closingDay: (acc.closingDay || 5).toString(),
+                    dueDay: (acc.dueDay || 15).toString(),
+                    color: acc.color,
+                    isFavorite: acc.isFavorite || false
                   });
                 }}
                 className="p-2 text-slate-300 dark:text-slate-600 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-lg transition-all"
