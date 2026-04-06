@@ -263,17 +263,6 @@ function BottomNav({ activeView, setActiveView, onAdd, onAccounts, onCategories,
   return (
     <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 px-1 py-3 z-40 flex justify-between items-center pb-6">
       <button 
-        onClick={() => setActiveView('dashboard')}
-        className={cn(
-          "flex flex-col items-center gap-1 flex-1 transition-colors",
-          activeView === 'dashboard' ? "text-indigo-600" : "text-slate-400 dark:text-slate-500"
-        )}
-      >
-        <LayoutDashboard className="w-5 h-5" />
-        <span className="text-[9px] font-bold">Painel</span>
-      </button>
-      
-      <button 
         onClick={() => setActiveView('invoices')}
         className={cn(
           "flex flex-col items-center gap-1 flex-1 transition-colors",
@@ -1223,12 +1212,15 @@ function AppContent() {
       <nav className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 sticky top-0 z-30">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between h-16 items-center">
-            <div className="flex items-center gap-1.5 sm:gap-2">
+            <button 
+              onClick={() => setActiveView('dashboard')}
+              className="flex items-center gap-1.5 sm:gap-2 hover:opacity-80 transition-opacity active:scale-95"
+            >
               <div className="bg-indigo-600 p-1.5 sm:p-2 rounded-lg">
                 <Wallet className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
               </div>
               <span className="text-lg sm:text-xl font-bold tracking-tight text-indigo-900 dark:text-indigo-400 truncate max-w-[120px] sm:max-w-none">FluxiaFinance</span>
-            </div>
+            </button>
             
             <div className="flex items-center gap-2 sm:gap-4">
               <button 
