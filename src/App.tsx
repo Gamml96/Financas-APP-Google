@@ -1155,18 +1155,25 @@ function AppContent() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-slate-50">
+      <div className={cn("flex items-center justify-center min-h-screen bg-slate-50 dark:bg-slate-950", theme === 'dark' && 'dark')}>
         <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-600"></div>
       </div>
     );
   }
 
   if (!user) {
-    return <LoginView onLogin={signInWithGoogle} />;
+    return (
+      <div className={theme === 'dark' ? 'dark' : ''}>
+        <LoginView onLogin={signInWithGoogle} />
+      </div>
+    );
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 font-sans transition-colors duration-300">
+    <div className={cn(
+      "min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 font-sans transition-colors duration-300",
+      theme === 'dark' && 'dark'
+    )}>
       {/* Navbar */}
       <nav className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 sticky top-0 z-30">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
