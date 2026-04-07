@@ -376,6 +376,7 @@ function AppContent() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [showAccountModal, setShowAccountModal] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
+  const [transactionToDelete, setTransactionToDelete] = useState<Transaction | null>(null);
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [showBudgetModal, setShowBudgetModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
@@ -1158,7 +1159,7 @@ function AppContent() {
   const handleUpdateTransaction = async (data: any) => {
     if (!user || !editingTransaction) return;
     try {
-      const { installments, ...baseData } = data;
+      const { installments, updateFuture, ...baseData } = data;
       const account = accounts.find(a => a.id === data.accountId);
       const purchaseDate = parseISO(data.date);
       
@@ -1171,22 +1172,69 @@ function AppContent() {
         }
       }
 
-      await updateDoc(doc(db, 'transactions', editingTransaction.id), {
-        ...baseData,
-        date: Timestamp.fromDate(purchaseDate),
-        dueDate: Timestamp.fromDate(dueDate)
-      });
+      if (updateFuture && editingTransaction.groupId) {
+        const batch = writeBatch(db);
+        const currentTxDate = editingTransaction.date instanceof Timestamp ? editingTransaction.date.toDate() : new Date(editingTransaction.date);
+        
+        // Find all transactions in the group that are on or after the current one's date and have the same type
+        const futureTransactions = transactions.filter(tx => 
+          tx.groupId === editingTransaction.groupId && 
+          tx.type === editingTransaction.type &&
+          (tx.date instanceof Timestamp ? tx.date.toDate() : new Date(tx.date)) >= currentTxDate
+        );
+
+        futureTransactions.forEach(tx => {
+          // We update common fields. 
+          // We don't update 'date' or 'dueDate' for future ones to avoid collapsing the whole series into one day.
+          // But we DO update the current one's date.
+          const isCurrent = tx.id === editingTransaction.id;
+          
+          const updateData: any = {
+            amount: baseData.amount,
+            category: baseData.category,
+            description: baseData.description,
+            accountId: baseData.accountId,
+            paymentType: baseData.paymentType,
+            type: baseData.type,
+            isPaid: baseData.isPaid
+          };
+
+          if (isCurrent) {
+            updateData.date = Timestamp.fromDate(purchaseDate);
+            updateData.dueDate = Timestamp.fromDate(dueDate);
+          }
+
+          batch.update(doc(db, 'transactions', tx.id), updateData);
+        });
+        
+        await batch.commit();
+        setToast({ message: `${futureTransactions.length} transações atualizadas com sucesso!`, type: 'success' });
+      } else {
+        await updateDoc(doc(db, 'transactions', editingTransaction.id), {
+          ...baseData,
+          date: Timestamp.fromDate(purchaseDate),
+          dueDate: Timestamp.fromDate(dueDate)
+        });
+        setToast({ message: "Transação atualizada com sucesso!", type: 'success' });
+      }
       setEditingTransaction(null);
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `transactions/${editingTransaction.id}`);
+      setToast({ message: "Erro ao atualizar transação.", type: 'error' });
     }
   };
 
   const handleDeleteTransaction = async (id: string) => {
-    try {
-      await deleteDoc(doc(db, 'transactions', id));
-    } catch (error) {
-      handleFirestoreError(error, OperationType.DELETE, `transactions/${id}`);
+    const tx = transactions.find(t => t.id === id);
+    if (tx?.groupId) {
+      setTransactionToDelete(tx);
+    } else {
+      try {
+        await deleteDoc(doc(db, 'transactions', id));
+        setToast({ message: "Transação excluída com sucesso!", type: 'success' });
+      } catch (error) {
+        handleFirestoreError(error, OperationType.DELETE, `transactions/${id}`);
+      }
     }
   };
 
@@ -2056,6 +2104,73 @@ function AppContent() {
       </AnimatePresence>
 
       <AnimatePresence>
+        {transactionToDelete && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
+            <motion.div 
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white dark:bg-slate-900 w-full max-w-md rounded-2xl shadow-2xl p-6"
+            >
+              <div className="flex items-center gap-3 mb-4 text-rose-600">
+                <AlertTriangle className="w-6 h-6" />
+                <h3 className="text-lg font-bold">Excluir Transação</h3>
+              </div>
+              <p className="text-slate-600 dark:text-slate-400 mb-6 text-sm">
+                Esta transação faz parte de um grupo (parcelas ou recorrência). Como deseja prosseguir?
+              </p>
+              <div className="space-y-3">
+                <button
+                  onClick={async () => {
+                    try {
+                      await deleteDoc(doc(db, 'transactions', transactionToDelete.id));
+                      setToast({ message: "Transação excluída com sucesso!", type: 'success' });
+                    } catch (error) {
+                      handleFirestoreError(error, OperationType.DELETE, `transactions/${transactionToDelete.id}`);
+                    }
+                    setTransactionToDelete(null);
+                  }}
+                  className="w-full py-3 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl font-semibold hover:bg-slate-200 dark:hover:bg-slate-700 transition-all text-sm"
+                >
+                  Excluir apenas esta
+                </button>
+                <button
+                  onClick={async () => {
+                    try {
+                      const batch = writeBatch(db);
+                      const currentTxDate = transactionToDelete.date instanceof Timestamp ? transactionToDelete.date.toDate() : new Date(transactionToDelete.date);
+                      const futureTransactions = transactions.filter(tx => 
+                        tx.groupId === transactionToDelete.groupId && 
+                        tx.type === transactionToDelete.type &&
+                        (tx.date instanceof Timestamp ? tx.date.toDate() : new Date(tx.date)) >= currentTxDate
+                      );
+                      futureTransactions.forEach(tx => {
+                        batch.delete(doc(db, 'transactions', tx.id));
+                      });
+                      await batch.commit();
+                      setToast({ message: `${futureTransactions.length} transações excluídas com sucesso!`, type: 'success' });
+                    } catch (error) {
+                      handleFirestoreError(error, OperationType.DELETE, 'transactions-batch');
+                    }
+                    setTransactionToDelete(null);
+                  }}
+                  className="w-full py-3 bg-rose-600 text-white rounded-xl font-semibold hover:bg-rose-700 transition-all text-sm shadow-lg shadow-rose-100 dark:shadow-none"
+                >
+                  Excluir esta e todas as próximas
+                </button>
+                <button
+                  onClick={() => setTransactionToDelete(null)}
+                  className="w-full py-3 text-slate-500 dark:text-slate-400 font-medium hover:text-slate-700 dark:hover:text-slate-200 transition-all text-sm"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
         {showCategoryModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <motion.div 
@@ -2754,6 +2869,7 @@ function InvoiceView({ transactions, accounts, onEdit, onDelete, categories }: {
 function TransactionForm({ onSubmit, onCancel, categories: allCategories, accounts, initialData }: { onSubmit: (data: any) => Promise<void>, onCancel: () => void, categories: Category[], accounts: Account[], initialData?: Transaction }) {
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [updateFuture, setUpdateFuture] = useState(false);
   const [formData, setFormData] = useState({
     amount: initialData ? initialData.amount.toString() : '',
     type: initialData ? initialData.type : 'expense' as 'income' | 'expense' | 'transfer',
@@ -2888,7 +3004,8 @@ function TransactionForm({ onSubmit, onCancel, categories: allCategories, accoun
       try {
         await onSubmit({
           ...formData,
-          amount
+          amount,
+          updateFuture
         });
       } catch (err: any) {
         setError("Ocorreu um erro ao salvar a transação. Por favor, tente novamente.");
@@ -3119,6 +3236,33 @@ function TransactionForm({ onSubmit, onCancel, categories: allCategories, accoun
           placeholder="O que foi isso?"
         />
       </div>
+
+      {initialData?.groupId && (
+        <div className="p-4 bg-amber-50/50 dark:bg-amber-900/20 rounded-2xl border border-amber-100 dark:border-amber-800/50 transition-all">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <RefreshCcw className={cn("w-4 h-4", updateFuture ? "text-amber-600 dark:text-amber-400" : "text-slate-400 dark:text-slate-600")} />
+              <div className="flex flex-col">
+                <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">Atualizar próximas?</span>
+                <span className="text-[10px] text-slate-500 dark:text-slate-400">Aplicar mudanças a todas as parcelas/repetições futuras</span>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setUpdateFuture(!updateFuture)}
+              className={cn(
+                "w-10 h-5 rounded-full transition-all relative",
+                updateFuture ? "bg-amber-600" : "bg-slate-300 dark:bg-slate-700"
+              )}
+            >
+              <div className={cn(
+                "absolute top-1 w-3 h-3 bg-white rounded-full transition-all shadow-sm",
+                updateFuture ? "right-1" : "left-1"
+              )} />
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="flex gap-3 pt-4">
         <button
