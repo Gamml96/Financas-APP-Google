@@ -60,7 +60,14 @@ import {
   AlertCircle,
   Sun,
   Moon,
-  Star
+  Star,
+  Utensils,
+  Home,
+  Car,
+  Tv,
+  Heart,
+  ShoppingBag,
+  MoreHorizontal
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -2333,6 +2340,28 @@ function SummaryCard({ title, amount, icon, color, trend, alertOnNegative = fals
   );
 }
 
+// Category Icon Helper
+function CategoryIcon({ iconName, className }: { iconName: string, className?: string }) {
+  const icons: Record<string, any> = {
+    DollarSign,
+    Utensils,
+    Home,
+    Car,
+    Tv,
+    Heart,
+    ShoppingBag,
+    MoreHorizontal,
+    RefreshCcw,
+    Wallet,
+    CreditCard,
+    Tag
+  };
+  
+  const Icon = icons[iconName] || Tag;
+  return <Icon className={className} />;
+}
+
+// Transaction Item Component
 function TransactionItem({ tx, categories, accounts, onEdit, onDelete }: { 
   tx: Transaction, 
   categories: Category[], 
@@ -2350,60 +2379,77 @@ function TransactionItem({ tx, categories, accounts, onEdit, onDelete }: {
       layout
       initial={{ opacity: 0, x: -10 }}
       animate={{ opacity: 1, x: 0 }}
-      className="group flex items-center justify-between p-4 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors border border-transparent hover:border-slate-100 dark:hover:border-slate-800"
+      className="group flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors border border-transparent hover:border-slate-100 dark:hover:border-slate-800 gap-3 sm:gap-4"
     >
       <div className="flex items-center gap-3 sm:gap-4 min-w-0 flex-1">
         <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center text-white shadow-sm shrink-0" style={{ backgroundColor: cat.color }}>
-          <Tag className="w-4 h-4 sm:w-5 sm:h-5" />
+          <CategoryIcon iconName={cat.icon} className="w-4 h-4 sm:w-5 sm:h-5" />
         </div>
         <div className="min-w-0 flex-1">
-          <h5 className="font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-            <span className="truncate">{tx.description || tx.category}</span>
-            {tx.isRecurring && (
-              <RefreshCcw className="w-3 h-3 text-indigo-500 shrink-0" />
-            )}
-            {tx.installment && (
-              <span className="text-[10px] bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 px-1.5 py-0.5 rounded shrink-0">
-                {tx.installment}/{tx.totalInstallments}
-              </span>
-            )}
-            {tx.paymentType === 'credit' && (
-              <CreditCard className="w-3 h-3 text-slate-400 shrink-0" />
-            )}
-          </h5>
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] sm:text-xs text-slate-500 dark:text-slate-400">
-            <span className="font-medium text-slate-700 dark:text-slate-300 truncate max-w-[100px] sm:max-w-none">{account?.name || 'N/A'}</span>
-            <span className="text-slate-300 dark:text-slate-700">•</span>
-            <span className="truncate max-w-[100px] sm:max-w-none">{tx.category}</span>
-            <span className="text-slate-300 dark:text-slate-700">•</span>
-            <span className="flex items-center gap-1 shrink-0">
-              <Calendar className="w-3 h-3 text-slate-400" />
+          <div className="flex items-center flex-wrap gap-2 mb-0.5">
+            <h5 className="font-semibold text-slate-900 dark:text-slate-100 truncate max-w-[150px] sm:max-w-none">
+              {tx.description || tx.category}
+            </h5>
+            <div className="flex items-center gap-1.5">
+              {tx.isRecurring && (
+                <div className="bg-indigo-50 dark:bg-indigo-900/30 p-1 rounded" title="Recorrente">
+                  <RefreshCcw className="w-3 h-3 text-indigo-500" />
+                </div>
+              )}
+              {tx.paymentType === 'credit' && (
+                <div className="bg-slate-100 dark:bg-slate-800 p-1 rounded" title="Cartão de Crédito">
+                  <CreditCard className="w-3 h-3 text-slate-400" />
+                </div>
+              )}
+              {tx.installment && (
+                <span className="text-[10px] bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 px-1.5 py-0.5 rounded font-medium">
+                  {tx.installment}/{tx.totalInstallments}
+                </span>
+              )}
+            </div>
+          </div>
+          
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] sm:text-xs text-slate-500 dark:text-slate-400">
+            <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-slate-700 dark:text-slate-300">
+              <Wallet className="w-2.5 h-2.5" />
+              <span className="truncate max-w-[80px] sm:max-w-none font-medium">{account?.name || 'N/A'}</span>
+            </div>
+            <span className="text-slate-300 dark:text-slate-700 hidden sm:inline">•</span>
+            <div className="flex items-center gap-1">
+              <Tag className="w-2.5 h-2.5 text-slate-400" />
+              <span className="truncate max-w-[80px] sm:max-w-none">{tx.category}</span>
+            </div>
+            <span className="text-slate-300 dark:text-slate-700 hidden sm:inline">•</span>
+            <div className="flex items-center gap-1 shrink-0">
+              <Calendar className="w-2.5 h-2.5 text-slate-400" />
               {format(purchaseDate, 'dd/MM/yy', { locale: ptBR })}
-            </span>
+            </div>
           </div>
         </div>
       </div>
-      <div className="flex items-center gap-1 sm:gap-2 shrink-0 ml-2">
+
+      <div className="flex items-center justify-between sm:justify-end gap-3 sm:gap-4 shrink-0 pl-13 sm:pl-0">
         <span className={cn(
-          "font-bold text-base sm:text-lg",
+          "font-bold text-lg sm:text-lg",
           tx.type === 'income' ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"
         )}>
           {tx.type === 'income' ? '+' : '-'}{tx.amount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
         </span>
-        <div className="flex items-center md:opacity-0 md:group-hover:opacity-100 transition-all opacity-100">
+        
+        <div className="flex items-center gap-1">
           <button 
             onClick={() => onEdit(tx)}
-            className="p-1.5 sm:p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-lg transition-all"
-            title="Edit"
+            className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-lg transition-all"
+            title="Editar"
           >
-            <Edit className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+            <Edit className="w-4 h-4" />
           </button>
           <button 
             onClick={() => onDelete(tx.id)}
-            className="p-1.5 sm:p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded-lg transition-all"
-            title="Delete"
+            className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded-lg transition-all"
+            title="Excluir"
           >
-            <Trash2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+            <Trash2 className="w-4 h-4" />
           </button>
         </div>
       </div>
