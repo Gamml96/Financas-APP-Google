@@ -82,9 +82,24 @@
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["userId", "category", "amount", "month"]
+    },
+    "AllowedUser": {
+      "title": "AllowedUser",
+      "description": "Whitelist of users allowed to access the application",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string", "format": "email" },
+        "addedAt": { "type": "string", "format": "date-time" },
+        "addedBy": { "type": "string" }
+      },
+      "required": ["email"]
     }
   },
   "firestore": {
+    "/allowed_users/{email}": {
+      "schema": "AllowedUser",
+      "description": "Whitelist of authorized emails"
+    },
     "/users/{userId}": {
       "schema": "User",
       "description": "User profile data"
