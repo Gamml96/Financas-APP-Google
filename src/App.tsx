@@ -394,7 +394,6 @@ function AppContent() {
   const [typeFilter, setTypeFilter] = useState<'all' | 'income' | 'expense'>('all');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [paymentTypeFilter, setPaymentTypeFilter] = useState<'all' | 'credit' | 'debit'>('all');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'paid' | 'pending'>('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedAccountId, setSelectedAccountId] = useState<string>('all');
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
@@ -759,10 +758,6 @@ function AppContent() {
     if (paymentTypeFilter !== 'all') {
       filtered = filtered.filter(tx => tx.paymentType === paymentTypeFilter);
     }
-
-    if (statusFilter !== 'all') {
-      filtered = filtered.filter(tx => statusFilter === 'paid' ? tx.isPaid : !tx.isPaid);
-    }
     
     if (searchTerm.trim()) {
       const term = searchTerm.toLowerCase().trim();
@@ -773,7 +768,7 @@ function AppContent() {
     }
     
     return filtered;
-  }, [filteredTransactions, typeFilter, categoryFilter, paymentTypeFilter, statusFilter, searchTerm]);
+  }, [filteredTransactions, typeFilter, categoryFilter, paymentTypeFilter, searchTerm]);
 
   const totals = useMemo(() => {
     return filteredTransactions.reduce((acc, tx) => {
@@ -1263,11 +1258,6 @@ function AppContent() {
             frequency: baseData.frequency,
             recurringMonths: baseData.recurringMonths
           };
-
-          // Only update isPaid if it's explicitly provided (to avoid setting it to undefined)
-          if (baseData.isPaid !== undefined) {
-            updateData.isPaid = baseData.isPaid;
-          }
 
           if (isCurrent) {
             updateData.date = Timestamp.fromDate(purchaseDate);
@@ -1763,16 +1753,6 @@ function AppContent() {
                     <option value="all">Todos Pagamentos</option>
                     <option value="debit">Débito / Dinheiro</option>
                     <option value="credit">Cartão de Crédito</option>
-                  </select>
-
-                  <select
-                    value={statusFilter}
-                    onChange={(e) => setStatusFilter(e.target.value as any)}
-                    className="px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-700 dark:text-slate-300"
-                  >
-                    <option value="all">Todos Status</option>
-                    <option value="paid">Pago / Recebido</option>
-                    <option value="pending">Pendente</option>
                   </select>
                 </div>
 
@@ -2809,15 +2789,6 @@ function TransactionItem({ tx, categories, accounts, onEdit, onDelete }: {
             <h5 className="font-semibold text-slate-900 dark:text-slate-100 truncate max-w-[150px] sm:max-w-none">
               {tx.description || tx.category}
             </h5>
-            {tx.isPaid ? (
-              <div className="bg-emerald-50 dark:bg-emerald-900/30 p-1 rounded" title="Pago/Recebido">
-                <CheckCircle2 className="w-3 h-3 text-emerald-500" />
-              </div>
-            ) : (
-              <div className="bg-amber-50 dark:bg-amber-900/30 p-1 rounded" title="Pendente">
-                <AlertCircle className="w-3 h-3 text-amber-500" />
-              </div>
-            )}
             <div className="flex items-center gap-1.5">
               {tx.isRecurring && (
                 <div className="bg-indigo-50 dark:bg-indigo-900/30 p-1 rounded" title="Recorrente">
@@ -3086,7 +3057,6 @@ function TransactionForm({ onSubmit, onCancel, categories: allCategories, accoun
     accountId: initialData ? initialData.accountId : (accounts.find(a => a.isFavorite)?.id || accounts[0]?.id || ''),
     toAccountId: '',
     installments: initialData ? (initialData.totalInstallments?.toString() || '1') : '1',
-    isPaid: initialData ? (initialData.isPaid || false) : (initialData?.type === 'income' ? true : false),
     isRecurring: initialData ? (initialData.isRecurring || false) : false,
     frequency: initialData ? (initialData.frequency || 'monthly') : 'monthly' as 'weekly' | 'monthly' | 'yearly',
     recurringMonths: '12',
@@ -3391,31 +3361,7 @@ function TransactionForm({ onSubmit, onCancel, categories: allCategories, accoun
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div className="p-4 bg-slate-50/50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-slate-800 transition-all">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <CheckCircle2 className={cn("w-4 h-4", formData.isPaid ? "text-emerald-600 dark:text-emerald-400" : "text-slate-400 dark:text-slate-600")} />
-              <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">
-                {formData.type === 'income' ? 'Recebido' : 'Pago'}
-              </span>
-            </div>
-            <button
-              type="button"
-              onClick={() => setFormData({ ...formData, isPaid: !formData.isPaid })}
-              className={cn(
-                "w-10 h-5 rounded-full transition-all relative",
-                formData.isPaid ? "bg-emerald-600" : "bg-slate-300 dark:bg-slate-700"
-              )}
-            >
-              <div className={cn(
-                "absolute top-1 w-3 h-3 bg-white rounded-full transition-all shadow-sm",
-                formData.isPaid ? "right-1" : "left-1"
-              )} />
-            </button>
-          </div>
-        </div>
-
+      <div className="grid grid-cols-1 gap-4">
         {formData.paymentType !== 'credit' && (
           <div className="p-4 bg-slate-50/50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-slate-800 transition-all">
             <div className="flex items-center justify-between">
