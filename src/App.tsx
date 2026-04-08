@@ -705,9 +705,30 @@ function AppContent() {
     }
 
     return transactions.filter(tx => {
-      // Para cartão de crédito, usamos a data de vencimento para filtrar na dashboard,
-      // assim as parcelas aparecem no mês correto do pagamento.
-      // Agora respeita o viewMode definido pelo usuário.
+      // Para o dashboard principal (Fluxo de Caixa, Saldo, Lista), sempre usamos a data de vencimento para cartões.
+      const dateToUse = (tx.paymentType === 'credit' && tx.dueDate) 
+        ? (tx.dueDate instanceof Timestamp ? tx.dueDate.toDate() : new Date(tx.dueDate))
+        : (tx.date instanceof Timestamp ? tx.date.toDate() : new Date(tx.date));
+      
+      return isWithinInterval(dateToUse, { start, end }) && 
+             (selectedAccountId === 'all' || tx.accountId === selectedAccountId);
+    });
+  }, [transactions, filterMonth, dateRange, selectedAccountId]);
+
+  const analysisTransactions = useMemo(() => {
+    let start: Date;
+    let end: Date;
+
+    if (dateRange && dateRange.start && dateRange.end) {
+      start = startOfDay(new Date(dateRange.start + 'T00:00:00'));
+      end = new Date(dateRange.end + 'T23:59:59');
+    } else {
+      start = startOfMonth(filterMonth);
+      end = endOfMonth(filterMonth);
+    }
+
+    return transactions.filter(tx => {
+      // Para análise e orçamento, respeita o viewMode (Compra vs Vencimento)
       const dateToUse = (viewMode === 'due' && tx.paymentType === 'credit' && tx.dueDate) 
         ? (tx.dueDate instanceof Timestamp ? tx.dueDate.toDate() : new Date(tx.dueDate))
         : (tx.date instanceof Timestamp ? tx.date.toDate() : new Date(tx.date));
@@ -885,7 +906,7 @@ function AppContent() {
 
   const categoryData = useMemo(() => {
     const data: Record<string, { name: string, value: number, color: string }> = {};
-    filteredTransactions.filter(t => t.type === 'expense').forEach(tx => {
+    analysisTransactions.filter(t => t.type === 'expense').forEach(tx => {
       if (!data[tx.category]) {
         const cat = allCategories.find(c => c.name === tx.category) || DEFAULT_CATEGORIES[7];
         data[tx.category] = { name: tx.category, value: 0, color: cat.color };
@@ -894,7 +915,7 @@ function AppContent() {
       data[tx.category].value += amount;
     });
     return Object.values(data);
-  }, [filteredTransactions, allCategories]);
+  }, [analysisTransactions, allCategories]);
 
   const budgetProgress = useMemo(() => {
     const monthStr = format(filterMonth, 'yyyy-MM');
@@ -1485,37 +1506,8 @@ function AppContent() {
               </div>
             </div>
 
-            {/* Group 2: View Mode & Date Range */}
+            {/* Group 2: Date Range Filter */}
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-              {/* View Mode Toggle */}
-              <div className="flex p-1 bg-slate-100 dark:bg-slate-800 rounded-xl">
-                <button
-                  onClick={() => setViewMode('due')}
-                  className={cn(
-                    "px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2",
-                    viewMode === 'due' 
-                      ? "bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm" 
-                      : "text-slate-500 dark:text-slate-400 hover:text-slate-700"
-                  )}
-                >
-                  <Calendar className="w-4 h-4" />
-                  <span>Vencimento</span>
-                </button>
-                <button
-                  onClick={() => setViewMode('purchase')}
-                  className={cn(
-                    "px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2",
-                    viewMode === 'purchase' 
-                      ? "bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm" 
-                      : "text-slate-500 dark:text-slate-400 hover:text-slate-700"
-                  )}
-                >
-                  <PlusCircle className="w-4 h-4" />
-                  <span>Compra</span>
-                </button>
-              </div>
-
-              {/* Date Range Filter */}
               <div className="flex items-center gap-3 px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm">
                 <Filter className="w-4 h-4 text-slate-400 shrink-0" />
                 <div className="flex items-center gap-2 shrink-0">
@@ -1591,31 +1583,51 @@ function AppContent() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           {/* Charts Section */}
           <div className="lg:col-span-2 space-y-8">
+            {/* Fluxo de Caixa Diário - MOVED TO TOP */}
             <div className="bg-white dark:bg-slate-900 p-4 sm:p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
-              <h3 className="text-lg font-semibold mb-6 text-slate-900 dark:text-slate-100">Análise de Gastos</h3>
+              <h3 className="text-lg font-semibold mb-6 text-slate-900 dark:text-slate-100">Fluxo de Caixa Diário</h3>
               <div className="h-[300px] w-full">
-                {categoryData.length > 0 ? (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={categoryData}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" className="dark:stroke-slate-800" />
-                      <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} />
-                      <YAxis axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} />
-                      <Tooltip 
-                        contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
-                        cursor={{ fill: '#f8fafc', opacity: 0.1 }}
-                      />
-                      <Bar dataKey="value" radius={[6, 6, 0, 0]}>
-                        {categoryData.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={entry.color} />
-                        ))}
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <div className="flex items-center justify-center h-full text-slate-400 dark:text-slate-500">
-                    Sem dados para este período
-                  </div>
-                )}
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={dailyBalanceData}>
+                    <defs>
+                      <linearGradient id="colorBalance" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#6366f1" stopOpacity={0.1}/>
+                        <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                    <XAxis 
+                      dataKey="date" 
+                      axisLine={false}
+                      tickLine={false}
+                      tick={{ fill: '#94a3b8', fontSize: 10 }}
+                      minTickGap={30}
+                    />
+                    <YAxis 
+                      axisLine={false}
+                      tickLine={false}
+                      tick={{ fill: '#94a3b8', fontSize: 10 }}
+                      tickFormatter={(value) => value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 })}
+                    />
+                    <Tooltip 
+                      contentStyle={{ 
+                        backgroundColor: '#fff', 
+                        borderRadius: '12px', 
+                        border: 'none', 
+                        boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' 
+                      }}
+                      formatter={(value: number) => [value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }), 'Saldo']}
+                    />
+                    <Area 
+                      type="monotone" 
+                      dataKey="balance" 
+                      stroke="#6366f1" 
+                      strokeWidth={3}
+                      fillOpacity={1} 
+                      fill="url(#colorBalance)" 
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
               </div>
             </div>
 
@@ -1703,157 +1715,6 @@ function AppContent() {
 
           {/* Sidebar Section */}
           <div className="space-y-8">
-            <div className="bg-white dark:bg-slate-900 p-4 sm:p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
-              <h3 className="text-lg font-semibold mb-6 text-slate-900 dark:text-slate-100">Fluxo de Caixa Diário</h3>
-              <div className="h-[300px] w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={dailyBalanceData}>
-                    <defs>
-                      <linearGradient id="colorBalance" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#6366f1" stopOpacity={0.1}/>
-                        <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                    <XAxis 
-                      dataKey="date" 
-                      axisLine={false}
-                      tickLine={false}
-                      tick={{ fill: '#94a3b8', fontSize: 10 }}
-                      minTickGap={30}
-                    />
-                    <YAxis 
-                      axisLine={false}
-                      tickLine={false}
-                      tick={{ fill: '#94a3b8', fontSize: 10 }}
-                      tickFormatter={(value) => value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 })}
-                    />
-                    <Tooltip 
-                      contentStyle={{ 
-                        backgroundColor: '#fff', 
-                        borderRadius: '12px', 
-                        border: 'none', 
-                        boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' 
-                      }}
-                      formatter={(value: number) => [value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }), 'Saldo']}
-                    />
-                    <Area 
-                      type="monotone" 
-                      dataKey="balance" 
-                      stroke="#6366f1" 
-                      strokeWidth={3}
-                      fillOpacity={1} 
-                      fill="url(#colorBalance)" 
-                    />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-
-            <div className="bg-white dark:bg-slate-900 p-4 sm:p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
-              <h3 className="text-lg font-semibold mb-6 text-slate-900 dark:text-slate-100">Distribuição de Despesas</h3>
-              <div className="h-[250px] w-full">
-                {categoryData.length > 0 ? (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={categoryData}
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={60}
-                        outerRadius={80}
-                        paddingAngle={5}
-                        dataKey="value"
-                      >
-                        {categoryData.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={entry.color} />
-                        ))}
-                      </Pie>
-                      <Tooltip 
-                        contentStyle={{ 
-                          backgroundColor: '#1e293b', 
-                          borderRadius: '12px', 
-                          border: 'none', 
-                          boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)',
-                          color: '#f8fafc'
-                        }}
-                        itemStyle={{ color: '#f8fafc' }}
-                      />
-                    </PieChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <div className="flex items-center justify-center h-full text-slate-400 dark:text-slate-500">
-                    Nenhuma despesa registrada
-                  </div>
-                )}
-              </div>
-              <div className="mt-4 space-y-2">
-                {categoryData.slice(0, 4).map((cat, i) => (
-                  <div key={i} className="flex justify-between items-center text-sm">
-                    <div className="flex items-center gap-2">
-                      <div className="w-3 h-3 rounded-full" style={{ backgroundColor: cat.color }} />
-                      <span className="text-slate-600 dark:text-slate-400">{cat.name}</span>
-                    </div>
-                    <span className="font-medium text-slate-900 dark:text-slate-100">{cat.value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="bg-white dark:bg-slate-900 p-4 sm:p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
-              <div className="flex justify-between items-center mb-6">
-                <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Orçamentos do Mês</h3>
-                <button 
-                  onClick={() => setShowBudgetModal(true)}
-                  className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 text-sm font-medium"
-                >
-                  Configurar
-                </button>
-              </div>
-              
-              {budgetProgress.length === 0 ? (
-                <div className="text-center py-6">
-                  <PieChartIcon className="w-12 h-12 text-slate-200 dark:text-slate-800 mx-auto mb-3" />
-                  <p className="text-sm text-slate-500 dark:text-slate-400">Nenhum orçamento definido para este mês.</p>
-                </div>
-              ) : (
-                <div className="space-y-6">
-                  {budgetProgress.map((budget) => (
-                    <div key={budget.id} className="space-y-2">
-                      <div className="flex justify-between items-end">
-                        <div>
-                          <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{budget.category}</p>
-                          <p className="text-xs text-slate-500 dark:text-slate-400">
-                            {budget.spent.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} de {budget.amount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                          </p>
-                        </div>
-                        <span className={cn(
-                          "text-xs font-bold px-2 py-0.5 rounded-full",
-                          budget.percent >= 100 ? "bg-rose-100 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400" : 
-                          budget.percent >= 80 ? "bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400" : 
-                          "bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400"
-                        )}>
-                          {Math.round(budget.percent)}%
-                        </span>
-                      </div>
-                      <div className="h-2 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-                        <motion.div 
-                          initial={{ width: 0 }}
-                          animate={{ width: `${Math.min(budget.percent, 100)}%` }}
-                          className={cn(
-                            "h-full rounded-full transition-all duration-500",
-                            budget.percent >= 100 ? "bg-rose-500" : 
-                            budget.percent >= 80 ? "bg-amber-500" : 
-                            "bg-emerald-500"
-                          )}
-                        />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
             <div className="bg-indigo-900 text-white p-6 rounded-2xl shadow-xl overflow-hidden relative">
               <div className="relative z-10">
                 <h3 className="text-lg font-semibold mb-2">Dica Financeira</h3>
@@ -1863,6 +1724,181 @@ function AppContent() {
               </div>
               <div className="absolute -bottom-4 -right-4 opacity-10">
                 <TrendingUp className="w-24 h-24" />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* New Analysis Section at the bottom */}
+        <div className="mt-12 space-y-6">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+            <div>
+              <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">Análise Detalhada</h2>
+              <p className="text-sm text-slate-500 dark:text-slate-400">Entenda seu comportamento de consumo e orçamentos.</p>
+            </div>
+            
+            {/* View Mode Toggle - MOVED HERE */}
+            <div className="flex p-1 bg-slate-100 dark:bg-slate-800 rounded-xl shadow-inner">
+              <button
+                onClick={() => setViewMode('due')}
+                className={cn(
+                  "px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2",
+                  viewMode === 'due' 
+                    ? "bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm" 
+                    : "text-slate-500 dark:text-slate-400 hover:text-slate-700"
+                )}
+              >
+                <Calendar className="w-4 h-4" />
+                <span>Data de Vencimento</span>
+              </button>
+              <button
+                onClick={() => setViewMode('purchase')}
+                className={cn(
+                  "px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2",
+                  viewMode === 'purchase' 
+                    ? "bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm" 
+                    : "text-slate-500 dark:text-slate-400 hover:text-slate-700"
+                )}
+              >
+                <PlusCircle className="w-4 h-4" />
+                <span>Data da Compra</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <div className="lg:col-span-2 bg-white dark:bg-slate-900 p-4 sm:p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+              <h3 className="text-lg font-semibold mb-6 text-slate-900 dark:text-slate-100">Análise de Gastos por Categoria</h3>
+              <div className="h-[350px] w-full">
+                {categoryData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={categoryData}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" className="dark:stroke-slate-800" />
+                      <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} />
+                      <YAxis axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} />
+                      <Tooltip 
+                        contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
+                        cursor={{ fill: '#f8fafc', opacity: 0.1 }}
+                      />
+                      <Bar dataKey="value" radius={[6, 6, 0, 0]}>
+                        {categoryData.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={entry.color} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="flex items-center justify-center h-full text-slate-400 dark:text-slate-500">
+                    Sem dados para este período
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="space-y-8">
+              <div className="bg-white dark:bg-slate-900 p-4 sm:p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+                <h3 className="text-lg font-semibold mb-6 text-slate-900 dark:text-slate-100">Distribuição de Despesas</h3>
+                <div className="h-[250px] w-full">
+                  {categoryData.length > 0 ? (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={categoryData}
+                          cx="50%"
+                          cy="50%"
+                          innerRadius={60}
+                          outerRadius={80}
+                          paddingAngle={5}
+                          dataKey="value"
+                        >
+                          {categoryData.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={entry.color} />
+                          ))}
+                        </Pie>
+                        <Tooltip 
+                          contentStyle={{ 
+                            backgroundColor: '#1e293b', 
+                            borderRadius: '12px', 
+                            border: 'none', 
+                            boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)',
+                            color: '#f8fafc'
+                          }}
+                          itemStyle={{ color: '#f8fafc' }}
+                        />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <div className="flex items-center justify-center h-full text-slate-400 dark:text-slate-500">
+                      Nenhuma despesa registrada
+                    </div>
+                  )}
+                </div>
+                <div className="mt-4 space-y-2">
+                  {categoryData.slice(0, 5).map((cat, i) => (
+                    <div key={i} className="flex justify-between items-center text-sm">
+                      <div className="flex items-center gap-2">
+                        <div className="w-3 h-3 rounded-full" style={{ backgroundColor: cat.color }} />
+                        <span className="text-slate-600 dark:text-slate-400">{cat.name}</span>
+                      </div>
+                      <span className="font-medium text-slate-900 dark:text-slate-100">{cat.value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Orçamentos do Mês - MOVED HERE */}
+              <div className="bg-white dark:bg-slate-900 p-4 sm:p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+                <div className="flex justify-between items-center mb-6">
+                  <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Orçamentos do Mês</h3>
+                  <button 
+                    onClick={() => setShowBudgetModal(true)}
+                    className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 text-sm font-medium"
+                  >
+                    Configurar
+                  </button>
+                </div>
+                
+                {budgetProgress.length === 0 ? (
+                  <div className="text-center py-6">
+                    <PieChartIcon className="w-12 h-12 text-slate-200 dark:text-slate-800 mx-auto mb-3" />
+                    <p className="text-sm text-slate-500 dark:text-slate-400">Nenhum orçamento definido para este mês.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-6">
+                    {budgetProgress.map((budget) => (
+                      <div key={budget.id} className="space-y-2">
+                        <div className="flex justify-between items-end">
+                          <div>
+                            <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{budget.category}</p>
+                            <p className="text-xs text-slate-500 dark:text-slate-400">
+                              {budget.spent.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} de {budget.amount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                            </p>
+                          </div>
+                          <span className={cn(
+                            "text-xs font-bold px-2 py-0.5 rounded-full",
+                            budget.percent >= 100 ? "bg-rose-100 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400" : 
+                            budget.percent >= 80 ? "bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400" : 
+                            "bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400"
+                          )}>
+                            {Math.round(budget.percent)}%
+                          </span>
+                        </div>
+                        <div className="h-2 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                          <motion.div 
+                            initial={{ width: 0 }}
+                            animate={{ width: `${Math.min(budget.percent, 100)}%` }}
+                            className={cn(
+                              "h-full rounded-full transition-all duration-500",
+                              budget.percent >= 100 ? "bg-rose-500" : 
+                              budget.percent >= 80 ? "bg-amber-500" : 
+                              "bg-emerald-500"
+                            )}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           </div>
