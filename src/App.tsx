@@ -1233,6 +1233,8 @@ function AppContent() {
           ? editingTransaction.date.toDate() 
           : (typeof editingTransaction.date === 'string' ? parseISO(editingTransaction.date) : new Date(editingTransaction.date));
         
+        const offset = purchaseDate.getTime() - currentTxDate.getTime();
+
         // Find all transactions in the group that are on or after the current one's date and have the same type
         const futureTransactions = transactions.filter(tx => {
           const txDate = tx.date instanceof Timestamp 
@@ -1247,6 +1249,12 @@ function AppContent() {
         futureTransactions.forEach(tx => {
           const isCurrent = tx.id === editingTransaction.id;
           
+          const txOriginalDate = tx.date instanceof Timestamp 
+            ? tx.date.toDate() 
+            : (typeof tx.date === 'string' ? parseISO(tx.date) : new Date(tx.date));
+          
+          const newTxDate = new Date(txOriginalDate.getTime() + offset);
+
           const updateData: any = {
             amount: baseData.amount,
             category: baseData.category,
@@ -1256,13 +1264,25 @@ function AppContent() {
             type: baseData.type,
             isRecurring: baseData.isRecurring,
             frequency: baseData.frequency,
-            recurringMonths: baseData.recurringMonths
+            recurringMonths: baseData.recurringMonths,
+            date: Timestamp.fromDate(newTxDate)
           };
 
-          if (isCurrent) {
-            updateData.date = Timestamp.fromDate(purchaseDate);
-            updateData.dueDate = Timestamp.fromDate(dueDate);
+          // Handle dueDate
+          let newTxDueDate = newTxDate;
+          if (baseData.paymentType === 'credit') {
+            if (isCurrent && data.dueDate) {
+              newTxDueDate = parseISO(data.dueDate);
+            } else if ((account?.type === 'credit' || account?.type === 'hybrid') && account.closingDay && account.dueDay) {
+              newTxDueDate = calculateDueDate(newTxDate, account.closingDay, account.dueDay);
+            } else if (tx.dueDate) {
+              const txOriginalDueDate = tx.dueDate instanceof Timestamp 
+                ? tx.dueDate.toDate() 
+                : (typeof tx.dueDate === 'string' ? parseISO(tx.dueDate) : new Date(tx.dueDate));
+              newTxDueDate = new Date(txOriginalDueDate.getTime() + offset);
+            }
           }
+          updateData.dueDate = Timestamp.fromDate(newTxDueDate);
 
           batch.update(doc(db, 'transactions', tx.id), updateData);
         });
