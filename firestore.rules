@@ -54,6 +54,7 @@ service cloud.firestore {
     //   - icon: string (required)
     //   - color: string (required)
     //   - type: string (required, 'income', 'expense', or 'both')
+    //   - parentId: string (optional, ID of parent category)
     //
     // Collection: budgets
     // Fields:
@@ -132,7 +133,8 @@ service cloud.firestore {
       return data.name is string && data.name.size() > 0 &&
              data.icon is string && data.color is string &&
              data.type in ['income', 'expense', 'both'] &&
-             (!('userId' in data) || data.userId == request.auth.uid || data.userId == null);
+             (!('userId' in data) || data.userId == request.auth.uid || data.userId == null) &&
+             (!('parentId' in data) || data.parentId is string || data.parentId == null);
     }
 
     function isValidBudget(data) {

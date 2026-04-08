@@ -222,6 +222,7 @@ interface Category {
   icon: string;
   color: string;
   type: 'income' | 'expense' | 'both';
+  parentId?: string;
 }
 
 interface Budget {
@@ -1318,7 +1319,18 @@ function AppContent() {
 
   const handleDeleteCategory = async (id: string) => {
     try {
-      await deleteDoc(doc(db, 'categories', id));
+      const batch = writeBatch(db);
+      
+      // Clear parentId for any subcategories
+      const subcategories = customCategories.filter(c => c.parentId === id);
+      subcategories.forEach(sub => {
+        batch.update(doc(db, 'categories', sub.id), { parentId: null });
+      });
+      
+      // Delete the category
+      batch.delete(doc(db, 'categories', id));
+      
+      await batch.commit();
     } catch (error) {
       handleFirestoreError(error, OperationType.DELETE, `categories/${id}`);
     }
@@ -2264,6 +2276,7 @@ function AppContent() {
                 
                 <CategoryManager 
                   customCategories={customCategories}
+                  allCategories={allCategories}
                   onAdd={handleAddCategory}
                   onUpdate={handleUpdateCategory}
                   onDelete={handleDeleteCategory}
@@ -3207,9 +3220,22 @@ function TransactionForm({ onSubmit, onCancel, categories: allCategories, accoun
             onChange={(e) => setFormData({ ...formData, category: e.target.value })}
             className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 outline-none text-slate-900 dark:text-slate-100"
           >
-            {categories.map(c => (
-              <option key={c.id} value={c.name} className="dark:bg-slate-900">{c.name}</option>
-            ))}
+            {categories
+              .filter(c => !c.parentId && (c.type === 'both' || c.type === formData.type))
+              .map(parent => {
+                const subs = categories.filter(c => c.parentId === parent.id);
+                if (subs.length === 0) {
+                  return <option key={parent.id} value={parent.name}>{parent.name}</option>;
+                }
+                return (
+                  <optgroup key={parent.id} label={parent.name} className="dark:bg-slate-900">
+                    <option value={parent.name}>{parent.name} (Geral)</option>
+                    {subs.map(sub => (
+                      <option key={sub.id} value={sub.name}>{sub.name}</option>
+                    ))}
+                  </optgroup>
+                );
+              })}
           </select>
         </div>
         <div>
@@ -3614,8 +3640,49 @@ function AccountManager({ accounts, onAdd, onUpdate, onDelete }: { accounts: Acc
   );
 }
 
-function CategoryManager({ customCategories, onAdd, onUpdate, onDelete }: { 
+function CategoryCard({ cat, onEdit, onDelete, isSubcategory = false }: { 
+  cat: Category, 
+  onEdit: (cat: Category) => void, 
+  onDelete: (id: string) => void,
+  isSubcategory?: boolean
+}) {
+  return (
+    <div className={cn(
+      "group flex items-center justify-between p-3.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl hover:shadow-md transition-all",
+      isSubcategory && "ml-4 sm:ml-6 border-l-4 border-l-slate-100 dark:border-l-slate-700"
+    )}>
+      <div className="flex items-center gap-3 min-w-0">
+        <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white shadow-sm shrink-0" style={{ backgroundColor: cat.color }}>
+          <CategoryIcon iconName={cat.icon} className="w-5 h-5" />
+        </div>
+        <div className="min-w-0">
+          <p className="text-sm font-bold text-slate-900 dark:text-slate-100 truncate">{cat.name}</p>
+          <p className="text-[10px] font-medium text-slate-400 uppercase tracking-wider">
+            {cat.type === 'expense' ? 'Despesa' : cat.type === 'income' ? 'Receita' : 'Ambos'}
+          </p>
+        </div>
+      </div>
+      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
+        <button 
+          onClick={() => onEdit(cat)}
+          className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-lg transition-all"
+        >
+          <Edit className="w-4 h-4" />
+        </button>
+        <button 
+          onClick={() => onDelete(cat.id)}
+          className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded-lg transition-all"
+        >
+          <Trash2 className="w-4 h-4" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function CategoryManager({ customCategories, allCategories, onAdd, onUpdate, onDelete }: { 
   customCategories: Category[], 
+  allCategories: Category[],
   onAdd: (data: any) => void, 
   onUpdate: (id: string, data: any) => void,
   onDelete: (id: string) => void 
@@ -3625,7 +3692,8 @@ function CategoryManager({ customCategories, onAdd, onUpdate, onDelete }: {
     name: '',
     type: 'expense' as 'income' | 'expense' | 'both',
     color: '#6366f1',
-    icon: 'Tag'
+    icon: 'Tag',
+    parentId: ''
   });
   const [showIconPicker, setShowIconPicker] = useState(false);
 
@@ -3651,26 +3719,37 @@ function CategoryManager({ customCategories, onAdd, onUpdate, onDelete }: {
       name: cat.name,
       type: cat.type,
       color: cat.color,
-      icon: cat.icon
+      icon: cat.icon,
+      parentId: cat.parentId || ''
     });
   };
 
   const handleCancel = () => {
     setEditingId(null);
-    setFormData({ name: '', type: 'expense', color: '#6366f1', icon: 'Tag' });
+    setFormData({ name: '', type: 'expense', color: '#6366f1', icon: 'Tag', parentId: '' });
     setShowIconPicker(false);
   };
 
   const handleSubmit = () => {
     if (!formData.name) return;
     
+    const data = {
+      ...formData,
+      parentId: formData.parentId || null
+    };
+
     if (editingId) {
-      onUpdate(editingId, formData);
+      onUpdate(editingId, data);
     } else {
-      onAdd(formData);
+      onAdd(data);
     }
     handleCancel();
   };
+
+  // Group categories for the list
+  const parentCategories = allCategories.filter(c => !c.parentId);
+  const subCategories = customCategories.filter(c => c.parentId);
+  const orphanCustomCategories = customCategories.filter(c => !c.parentId);
 
   return (
     <div className="space-y-8">
@@ -3705,6 +3784,31 @@ function CategoryManager({ customCategories, onAdd, onUpdate, onDelete }: {
                 <option value="both">Ambos</option>
               </select>
             </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1.5 uppercase tracking-wider">Categoria Pai (Opcional)</label>
+            <select
+              value={formData.parentId}
+              onChange={(e) => {
+                const parentId = e.target.value;
+                const parent = allCategories.find(c => c.id === parentId);
+                setFormData({ 
+                  ...formData, 
+                  parentId,
+                  // Inherit color and icon if it's a new subcategory
+                  color: parent ? parent.color : formData.color,
+                  icon: parent ? parent.icon : formData.icon,
+                  type: parent ? parent.type : formData.type
+                });
+              }}
+              className="w-full px-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500 text-slate-900 dark:text-slate-100 transition-all font-medium"
+            >
+              <option value="">Nenhuma (Categoria Principal)</option>
+              {parentCategories.filter(c => c.id !== editingId).map(c => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
           </div>
           
           <div className="flex flex-col sm:flex-row gap-6">
@@ -3787,7 +3891,7 @@ function CategoryManager({ customCategories, onAdd, onUpdate, onDelete }: {
       {/* List Section */}
       <div>
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 uppercase tracking-widest">Categorias Personalizadas</h3>
+          <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 uppercase tracking-widest">Suas Categorias</h3>
           <span className="text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-500 px-2 py-0.5 rounded-full">
             {customCategories.length} TOTAL
           </span>
@@ -3799,36 +3903,59 @@ function CategoryManager({ customCategories, onAdd, onUpdate, onDelete }: {
             <p className="text-sm text-slate-400 dark:text-slate-500">Nenhuma categoria personalizada ainda.</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {customCategories.map(cat => (
-              <div key={cat.id} className="group flex items-center justify-between p-3.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl hover:shadow-md transition-all">
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white shadow-sm shrink-0" style={{ backgroundColor: cat.color }}>
-                    <CategoryIcon iconName={cat.icon} className="w-5 h-5" />
+          <div className="space-y-6">
+            {/* Grouped View */}
+            {parentCategories.map(parent => {
+              const children = subCategories.filter(c => c.parentId === parent.id);
+              const isCustomParent = customCategories.some(c => c.id === parent.id);
+              
+              if (!isCustomParent && children.length === 0) return null;
+
+              return (
+                <div key={parent.id} className="space-y-3">
+                  <div className="flex items-center gap-2 px-1">
+                    <div className="w-2 h-2 rounded-full" style={{ backgroundColor: parent.color }} />
+                    <h4 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">{parent.name}</h4>
                   </div>
-                  <div className="min-w-0">
-                    <p className="text-sm font-bold text-slate-900 dark:text-slate-100 truncate">{cat.name}</p>
-                    <p className="text-[10px] font-medium text-slate-400 uppercase tracking-wider">
-                      {cat.type === 'expense' ? 'Despesa' : cat.type === 'income' ? 'Receita' : 'Ambos'}
-                    </p>
+                  
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {isCustomParent && !parent.parentId && (
+                      <CategoryCard 
+                        cat={parent} 
+                        onEdit={handleEdit} 
+                        onDelete={onDelete} 
+                      />
+                    )}
+                    {children.map(child => (
+                      <CategoryCard 
+                        key={child.id}
+                        cat={child} 
+                        onEdit={handleEdit} 
+                        onDelete={onDelete} 
+                        isSubcategory
+                      />
+                    ))}
                   </div>
                 </div>
-                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
-                  <button 
-                    onClick={() => handleEdit(cat)}
-                    className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-lg transition-all"
-                  >
-                    <Edit className="w-4 h-4" />
-                  </button>
-                  <button 
-                    onClick={() => onDelete(cat.id)}
-                    className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded-lg transition-all"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+              );
+            })}
+
+            {/* Orphan custom categories (shouldn't happen with current logic but good for safety) */}
+            {orphanCustomCategories.filter(c => !parentCategories.some(p => p.id === c.id)).length > 0 && (
+              <div className="space-y-3">
+                <h4 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider px-1">Outras</h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {orphanCustomCategories.filter(c => !parentCategories.some(p => p.id === c.id)).map(cat => (
+                    <CategoryCard 
+                      key={cat.id}
+                      cat={cat} 
+                      onEdit={handleEdit} 
+                      onDelete={onDelete} 
+                    />
+                  ))}
                 </div>
               </div>
-            ))}
+            )}
           </div>
         )}
       </div>
