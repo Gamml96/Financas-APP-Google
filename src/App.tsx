@@ -149,6 +149,29 @@ function cn(...inputs: ClassValue[]) {
 
 const ADMIN_EMAIL = "gamml1996@gmail.com";
 
+const FINANCIAL_TIPS = [
+  "Economizar não é sobre quanto você ganha, mas sobre quanto você não gasta com bobagens. 😉",
+  "Seu 'eu do futuro' vai te agradecer por não ter comprado aquele gadget que você só usou uma vez.",
+  "Cafézinho na rua é bom, mas já viu como o saldo da conta sorri quando você faz em casa?",
+  "Regra de ouro: se você não pode comprar duas vezes, você não pode comprar.",
+  "Dinheiro não traz felicidade, mas boletos pagos trazem uma paz inexplicável, né?",
+  "Antes de comprar, pergunte-se: 'Eu preciso disso ou só estou entediado?'",
+  "Investir é como plantar uma árvore. O melhor momento foi há 20 anos, o segundo melhor é agora! 🌱",
+  "Cuidado com as 'pequenas' comprinhas de 10 reais. Elas são as ninjas que esvaziam sua conta.",
+  "Ter um fundo de emergência é como ter um guarda-chuva: você espera não usar, mas fica feliz quando tem.",
+  "O melhor investimento que você pode fazer é em você mesmo. Mas um CDB também ajuda! 📈",
+  "Não compare seu capítulo 1 com o capítulo 20 de outra pessoa. Cada bolso tem sua história.",
+  "Promoção só é desconto se você já ia comprar o item. Caso contrário, é gasto! 💸",
+  "Organizar as finanças é o primeiro passo para realizar aquele sonho que parece impossível.",
+  "Dê nome aos seus bois: cada real deve ter um destino certo no seu orçamento.",
+  "A disciplina financeira é a liberdade de amanhã. Aguenta firme! 💪",
+  "Pagar-se primeiro é a regra número 1. Guarde uma parte antes de começar a gastar.",
+  "Sua saúde financeira é tão importante quanto sua saúde física. Cuide bem dela!",
+  "Evite compras por impulso. Espere 24 horas antes de fechar o carrinho. 🛒",
+  "O cartão de crédito é um aliado, não um inimigo. Use com sabedoria e pague o total!",
+  "Pequenas economias hoje geram grandes conquistas amanhã. Acredite no processo."
+];
+
 function calculateDueDate(purchaseDate: Date, closingDay: number, dueDay: number): Date {
   const purchase = startOfDay(purchaseDate);
   
@@ -422,6 +445,18 @@ function AppContent() {
   const toggleTheme = () => {
     setTheme(prev => prev === 'light' ? 'dark' : 'light');
   };
+
+  const dailyTip = useMemo(() => {
+    const today = new Date();
+    const dateString = `${today.getFullYear()}-${today.getMonth()}-${today.getDate()}`;
+    let hash = 0;
+    for (let i = 0; i < dateString.length; i++) {
+      hash = ((hash << 5) - hash) + dateString.charCodeAt(i);
+      hash |= 0;
+    }
+    const index = Math.abs(hash) % FINANCIAL_TIPS.length;
+    return FINANCIAL_TIPS[index];
+  }, []);
 
   // Toast auto-hide
   useEffect(() => {
@@ -1550,98 +1585,100 @@ function AppContent() {
         {activeView === 'dashboard' ? (
           <>
             {/* Header & Month Filter */}
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
-          <div>
-            <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Painel</h1>
-            <p className="text-slate-500 dark:text-slate-400">Bem-vindo de volta, {(userProfile?.displayName || user.displayName)?.split(' ')[0]}!</p>
-          </div>
-          
-          <div className="flex flex-col md:flex-row items-stretch md:items-center gap-4 w-full lg:w-auto">
-            {/* Group 1: Account & Month */}
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-              {/* Account Filter */}
-              <div className="flex items-center gap-3 px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm min-w-[180px]">
-                <CreditCard className="w-4 h-4 text-indigo-500 shrink-0" />
-                <select 
-                  value={selectedAccountId}
-                  onChange={(e) => setSelectedAccountId(e.target.value)}
-                  className="text-sm font-bold border-none bg-transparent focus:ring-0 p-0 w-full cursor-pointer text-slate-700 dark:text-slate-200"
-                >
-                  <option value="all">Todas as Contas</option>
-                  {accounts.map(acc => (
-                    <option key={acc.id} value={acc.id}>{acc.name}</option>
-                  ))}
-                </select>
+            <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6 mb-8">
+              <div>
+                <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Painel Financeiro</h1>
+                <p className="text-slate-500 dark:text-slate-400">Olá, {(userProfile?.displayName || user.displayName)?.split(' ')[0]}! Veja como estão suas finanças.</p>
               </div>
+              
+              <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3 w-full lg:w-auto">
+                {/* Main Filters Group */}
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+                  {/* Account Selector */}
+                  <div className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm min-w-[180px] h-11">
+                    <CreditCard className="w-4 h-4 text-indigo-500 shrink-0" />
+                    <select 
+                      value={selectedAccountId}
+                      onChange={(e) => setSelectedAccountId(e.target.value)}
+                      className="text-sm font-bold border-none bg-transparent focus:ring-0 p-0 w-full cursor-pointer text-slate-700 dark:text-slate-200"
+                    >
+                      <option value="all">Todas as Contas</option>
+                      {accounts.map(acc => (
+                        <option key={acc.id} value={acc.id}>{acc.name}</option>
+                      ))}
+                    </select>
+                  </div>
 
-              {/* Month Navigator */}
-              <div className="flex items-center justify-between bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-1 shadow-sm">
-                <button 
-                  onClick={() => {
-                    setFilterMonth(subMonths(filterMonth, 1));
-                    setDateRange(null);
-                  }}
-                  className="p-2 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-lg transition-all text-slate-500 hover:text-indigo-600"
-                >
-                  <ChevronLeft className="w-5 h-5" />
-                </button>
-                <div className="px-4 font-bold min-w-[120px] text-center capitalize text-sm text-slate-700 dark:text-slate-200">
-                  {format(filterMonth, 'MMMM yyyy')}
+                  {/* Month Navigator */}
+                  <div className="flex items-center justify-between bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-1 shadow-sm h-11">
+                    <button 
+                      onClick={() => {
+                        setFilterMonth(subMonths(filterMonth, 1));
+                        setDateRange(null);
+                      }}
+                      className="p-2 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-lg transition-all text-slate-400 hover:text-indigo-600"
+                    >
+                      <ChevronLeft className="w-5 h-5" />
+                    </button>
+                    <div className="px-4 font-bold min-w-[130px] text-center capitalize text-sm text-slate-700 dark:text-slate-200">
+                      {format(filterMonth, 'MMMM yyyy')}
+                    </div>
+                    <button 
+                      onClick={() => {
+                        const nextMonth = new Date(filterMonth);
+                        nextMonth.setMonth(nextMonth.getMonth() + 1);
+                        setFilterMonth(nextMonth);
+                        setDateRange(null);
+                      }}
+                      className="p-2 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-lg transition-all text-slate-400 hover:text-indigo-600"
+                    >
+                      <ChevronRight className="w-5 h-5" />
+                    </button>
+                  </div>
                 </div>
-                <button 
-                  onClick={() => {
-                    const nextMonth = new Date(filterMonth);
-                    nextMonth.setMonth(nextMonth.getMonth() + 1);
-                    setFilterMonth(nextMonth);
-                    setDateRange(null);
-                  }}
-                  className="p-2 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-lg transition-all text-slate-500 hover:text-indigo-600"
-                >
-                  <ChevronRight className="w-5 h-5" />
-                </button>
-              </div>
-            </div>
 
-            {/* Group 2: Date Range Filter */}
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-              <div className="flex items-center gap-3 px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm">
-                <Filter className="w-4 h-4 text-slate-400 shrink-0" />
-                <div className="flex items-center gap-2 shrink-0">
-                  <input 
-                    type="date"
-                    value={dateRange?.start || ''}
-                    onChange={(e) => setDateRange({ start: e.target.value, end: dateRange?.end || '' })}
-                    className="text-xs font-bold border-none bg-transparent focus:ring-0 p-0 w-[105px] text-slate-600 dark:text-slate-300"
-                  />
-                  <span className="text-slate-300 dark:text-slate-600 font-bold">→</span>
-                  <input 
-                    type="date"
-                    value={dateRange?.end || ''}
-                    onChange={(e) => setDateRange({ start: dateRange?.start || '', end: e.target.value })}
-                    className="text-xs font-bold border-none bg-transparent focus:ring-0 p-0 w-[105px] text-slate-600 dark:text-slate-300"
-                  />
-                </div>
-                {dateRange && (
-                  <button 
-                    onClick={() => setDateRange(null)}
-                    className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full text-slate-400 hover:text-rose-500 transition-colors"
+                {/* Secondary Filters Group */}
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+                  {/* Date Range */}
+                  <div className="flex items-center gap-3 px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm h-11">
+                    <Filter className="w-4 h-4 text-slate-400 shrink-0" />
+                    <div className="flex items-center gap-2 shrink-0">
+                      <input 
+                        type="date"
+                        value={dateRange?.start || ''}
+                        onChange={(e) => setDateRange({ start: e.target.value, end: dateRange?.end || '' })}
+                        className="text-xs font-bold border-none bg-transparent focus:ring-0 p-0 w-[105px] text-slate-600 dark:text-slate-300"
+                      />
+                      <span className="text-slate-300 dark:text-slate-600 font-bold">→</span>
+                      <input 
+                        type="date"
+                        value={dateRange?.end || ''}
+                        onChange={(e) => setDateRange({ start: dateRange?.start || '', end: e.target.value })}
+                        className="text-xs font-bold border-none bg-transparent focus:ring-0 p-0 w-[105px] text-slate-600 dark:text-slate-300"
+                      />
+                    </div>
+                    {dateRange && (
+                      <button 
+                        onClick={() => setDateRange(null)}
+                        className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full text-slate-400 hover:text-rose-500 transition-colors"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Export Button */}
+                  <button
+                    onClick={handleExportCSV}
+                    disabled={displayTransactions.length === 0}
+                    className="flex items-center justify-center gap-2 px-6 py-2 bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 rounded-xl text-sm font-bold transition-all hover:bg-slate-800 dark:hover:bg-white disabled:opacity-50 disabled:cursor-not-allowed h-11"
                   >
-                    <X className="w-4 h-4" />
+                    <Download className="w-4 h-4" />
+                    <span className="hidden xl:inline">Exportar</span>
                   </button>
-                )}
+                </div>
               </div>
             </div>
-
-            <button
-              onClick={handleExportCSV}
-              disabled={displayTransactions.length === 0}
-              className="flex items-center justify-center gap-2 px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-bold transition-all shadow-lg shadow-indigo-200 dark:shadow-none disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <Download className="w-4 h-4" />
-              <span>Exportar Dados</span>
-            </button>
-          </div>
-        </div>
 
         {/* Summary Cards */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6 mb-8">
@@ -1728,14 +1765,37 @@ function AppContent() {
             </div>
 
             <div className="bg-white dark:bg-slate-900 p-4 sm:p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
-              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
-                <div>
+              <div className="flex flex-col gap-6 mb-6">
+                {/* Top Row: Title and Main Actions */}
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                   <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Transações Recentes</h3>
-                  <div className="flex gap-1 mt-2 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg w-fit">
+                  
+                  <div className="flex items-center gap-2 w-full sm:w-auto">
+                    <button 
+                      onClick={() => setShowImportModal(true)}
+                      className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 px-4 py-2 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 transition-all font-medium text-sm"
+                    >
+                      <RefreshCcw className="w-4 h-4" />
+                      <span>Importar</span>
+                    </button>
+                    <button 
+                      onClick={() => setShowAddModal(true)}
+                      className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-xl hover:bg-indigo-700 transition-all font-semibold text-sm active:scale-95 shadow-sm shadow-indigo-200 dark:shadow-none"
+                    >
+                      <Plus className="w-4 h-4" />
+                      <span>Nova Transação</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Bottom Row: Filters */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+                  {/* Type Filter */}
+                  <div className="flex p-1 bg-slate-100 dark:bg-slate-800 rounded-xl shadow-inner h-10">
                     <button 
                       onClick={() => setTypeFilter('all')}
                       className={cn(
-                        "px-3 py-1 text-xs font-medium rounded-md transition-all",
+                        "flex-1 text-[10px] font-bold rounded-lg transition-all",
                         typeFilter === 'all' ? "bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm" : "text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300"
                       )}
                     >
@@ -1744,7 +1804,7 @@ function AppContent() {
                     <button 
                       onClick={() => setTypeFilter('income')}
                       className={cn(
-                        "px-3 py-1 text-xs font-medium rounded-md transition-all",
+                        "flex-1 text-[10px] font-bold rounded-lg transition-all",
                         typeFilter === 'income' ? "bg-white dark:bg-slate-700 text-emerald-600 dark:text-emerald-400 shadow-sm" : "text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300"
                       )}
                     >
@@ -1753,24 +1813,23 @@ function AppContent() {
                     <button 
                       onClick={() => setTypeFilter('expense')}
                       className={cn(
-                        "px-3 py-1 text-xs font-medium rounded-md transition-all",
+                        "flex-1 text-[10px] font-bold rounded-lg transition-all",
                         typeFilter === 'expense' ? "bg-white dark:bg-slate-700 text-rose-600 dark:text-rose-400 shadow-sm" : "text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300"
                       )}
                     >
                       Despesas
                     </button>
                   </div>
-                </div>
 
-                <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto">
-                  <div className="flex-1 min-w-[200px] relative">
+                  {/* Search Filter */}
+                  <div className="relative h-10">
                     <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                     <input 
                       type="text"
-                      placeholder="Buscar transação..."
+                      placeholder="Buscar..."
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
-                      className="w-full pl-9 pr-4 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 outline-none transition-all text-slate-900 dark:text-slate-100"
+                      className="w-full h-full pl-9 pr-8 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 outline-none transition-all text-slate-900 dark:text-slate-100"
                     />
                     {searchTerm && (
                       <button 
@@ -1782,43 +1841,32 @@ function AppContent() {
                     )}
                   </div>
 
-                  <select
-                    value={categoryFilter}
-                    onChange={(e) => setCategoryFilter(e.target.value)}
-                    className="px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-700 dark:text-slate-300"
-                  >
-                    <option value="all">Todas Categorias</option>
-                    {allCategories.filter(c => !c.parentId).map(cat => (
-                      <option key={cat.id} value={cat.name}>{cat.name}</option>
-                    ))}
-                  </select>
+                  {/* Category Filter */}
+                  <div className="h-10">
+                    <select
+                      value={categoryFilter}
+                      onChange={(e) => setCategoryFilter(e.target.value)}
+                      className="w-full h-full px-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-700 dark:text-slate-300 cursor-pointer"
+                    >
+                      <option value="all">Todas Categorias</option>
+                      {allCategories.filter(c => !c.parentId).map(cat => (
+                        <option key={cat.id} value={cat.name}>{cat.name}</option>
+                      ))}
+                    </select>
+                  </div>
 
-                  <select
-                    value={paymentTypeFilter}
-                    onChange={(e) => setPaymentTypeFilter(e.target.value as any)}
-                    className="px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-700 dark:text-slate-300"
-                  >
-                    <option value="all">Todos Pagamentos</option>
-                    <option value="debit">Débito / Dinheiro</option>
-                    <option value="credit">Cartão de Crédito</option>
-                  </select>
-                </div>
-
-                <div className="flex gap-2">
-                  <button 
-                    onClick={() => setShowImportModal(true)}
-                    className="flex items-center gap-2 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 px-4 py-2 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 transition-all font-medium"
-                  >
-                    <RefreshCcw className="w-4 h-4" />
-                    <span className="hidden sm:inline">Importar</span>
-                  </button>
-                  <button 
-                    onClick={() => setShowAddModal(true)}
-                    className="flex items-center gap-2 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 px-4 py-2 rounded-xl hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-all font-semibold text-sm active:scale-95"
-                  >
-                    <Plus className="w-4 h-4" />
-                    <span>Adicionar Nova</span>
-                  </button>
+                  {/* Payment Type Filter */}
+                  <div className="h-10">
+                    <select
+                      value={paymentTypeFilter}
+                      onChange={(e) => setPaymentTypeFilter(e.target.value as any)}
+                      className="w-full h-full px-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-700 dark:text-slate-300 cursor-pointer"
+                    >
+                      <option value="all">Todos Pagamentos</option>
+                      <option value="debit">Débito / Dinheiro</option>
+                      <option value="credit">Cartão de Crédito</option>
+                    </select>
+                  </div>
                 </div>
               </div>
               
@@ -1836,9 +1884,9 @@ function AppContent() {
           <div className="space-y-8">
             <div className="bg-indigo-900 text-white p-6 rounded-2xl shadow-xl overflow-hidden relative">
               <div className="relative z-10">
-                <h3 className="text-lg font-semibold mb-2">Dica Financeira</h3>
-                <p className="text-indigo-100 text-sm leading-relaxed">
-                  "A melhor maneira de economizar dinheiro é parar de tentar impressionar pessoas que não se importam com você. Foque no seu eu do futuro."
+                <h3 className="text-lg font-semibold mb-2">Dica Financeira do Dia</h3>
+                <p className="text-indigo-100 text-sm leading-relaxed italic">
+                  "{dailyTip}"
                 </p>
               </div>
               <div className="absolute -bottom-4 -right-4 opacity-10">
