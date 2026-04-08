@@ -1439,138 +1439,135 @@ function AppContent() {
             <p className="text-slate-500 dark:text-slate-400">Bem-vindo de volta, {(userProfile?.displayName || user.displayName)?.split(' ')[0]}!</p>
           </div>
           
-          <div className="flex flex-col lg:flex-row items-stretch lg:items-center gap-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-1.5 shadow-sm w-full lg:w-auto">
-            {/* Account Filter */}
-            <div className="flex items-center gap-2 px-3 py-2 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700 min-w-[160px]">
-              <CreditCard className="w-4 h-4 text-slate-400 shrink-0" />
-              <select 
-                value={selectedAccountId}
-                onChange={(e) => setSelectedAccountId(e.target.value)}
-                className="text-sm font-semibold border-none bg-transparent focus:ring-0 p-0 w-full cursor-pointer text-slate-700 dark:text-slate-300"
-              >
-                <option value="all">Todas as Contas</option>
-                {accounts.map(acc => (
-                  <option key={acc.id} value={acc.id}>{acc.name}</option>
-                ))}
-              </select>
-            </div>
-
-            <div className="h-6 w-px bg-slate-200 dark:bg-slate-800 hidden lg:block" />
-
-            <div className="flex items-center justify-between bg-slate-50/50 dark:bg-slate-800/50 rounded-xl lg:bg-transparent">
-              <button 
-                onClick={() => {
-                  setFilterMonth(subMonths(filterMonth, 1));
-                  setDateRange(null);
-                }}
-                className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors text-slate-600 dark:text-slate-400"
-              >
-                <ChevronLeft className="w-5 h-5" />
-              </button>
-              <div className="px-2 font-bold min-w-[120px] text-center capitalize text-sm text-indigo-900 dark:text-indigo-400">
-                {format(filterMonth, 'MMMM yyyy')}
-              </div>
-              <button 
-                onClick={() => {
-                  const nextMonth = new Date(filterMonth);
-                  nextMonth.setMonth(nextMonth.getMonth() + 1);
-                  setFilterMonth(nextMonth);
-                  setDateRange(null);
-                }}
-                className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors text-slate-600 dark:text-slate-400"
-              >
-                <ChevronRight className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="h-6 w-px bg-slate-200 dark:bg-slate-800 hidden lg:block" />
-
-            <div className="flex p-1 bg-slate-100 dark:bg-slate-800 rounded-xl shrink-0">
-              <button
-                onClick={() => setViewMode('due')}
-                className={cn(
-                  "px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all flex items-center gap-1.5",
-                  viewMode === 'due' 
-                    ? "bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm" 
-                    : "text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300"
-                )}
-                title="Visualizar por data de vencimento (fluxo de caixa)"
-              >
-                <Calendar className="w-3 h-3" />
-                Vencimento
-              </button>
-              <button
-                onClick={() => setViewMode('purchase')}
-                className={cn(
-                  "px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all flex items-center gap-1.5",
-                  viewMode === 'purchase' 
-                    ? "bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm" 
-                    : "text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300"
-                )}
-                title="Visualizar por data da compra (competência)"
-              >
-                <PlusCircle className="w-3 h-3" />
-                Compra
-              </button>
-            </div>
-
-            <div className="h-6 w-px bg-slate-200 dark:bg-slate-800 hidden lg:block" />
-
-            <div className="flex items-center gap-2 px-3 py-2 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700 overflow-x-auto no-scrollbar">
-              <Filter className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-              <div className="flex items-center gap-1.5 shrink-0">
-                <input 
-                  type="date"
-                  value={dateRange?.start || ''}
-                  onChange={(e) => setDateRange({ start: e.target.value, end: dateRange?.end || '' })}
-                  className="text-[11px] font-medium border-none bg-transparent focus:ring-0 p-0 w-[85px] text-slate-600 dark:text-slate-400"
-                />
-                <span className="text-slate-300 dark:text-slate-600 text-[10px] font-bold">→</span>
-                <input 
-                  type="date"
-                  value={dateRange?.end || ''}
-                  onChange={(e) => setDateRange({ start: dateRange?.start || '', end: e.target.value })}
-                  className="text-[11px] font-medium border-none bg-transparent focus:ring-0 p-0 w-[85px] text-slate-600 dark:text-slate-400"
-                />
-              </div>
-              {dateRange && (
-                <button 
-                  onClick={() => setDateRange(null)}
-                  className="p-1 hover:bg-slate-200 rounded-full text-slate-400 hover:text-slate-600 shrink-0"
-                  title="Limpar Filtro"
+          <div className="flex flex-col md:flex-row items-stretch md:items-center gap-4 w-full lg:w-auto">
+            {/* Group 1: Account & Month */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+              {/* Account Filter */}
+              <div className="flex items-center gap-3 px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm min-w-[180px]">
+                <CreditCard className="w-4 h-4 text-indigo-500 shrink-0" />
+                <select 
+                  value={selectedAccountId}
+                  onChange={(e) => setSelectedAccountId(e.target.value)}
+                  className="text-sm font-bold border-none bg-transparent focus:ring-0 p-0 w-full cursor-pointer text-slate-700 dark:text-slate-200"
                 >
-                  <X className="w-3 h-3" />
+                  <option value="all">Todas as Contas</option>
+                  {accounts.map(acc => (
+                    <option key={acc.id} value={acc.id}>{acc.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Month Navigator */}
+              <div className="flex items-center justify-between bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-1 shadow-sm">
+                <button 
+                  onClick={() => {
+                    setFilterMonth(subMonths(filterMonth, 1));
+                    setDateRange(null);
+                  }}
+                  className="p-2 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-lg transition-all text-slate-500 hover:text-indigo-600"
+                >
+                  <ChevronLeft className="w-5 h-5" />
                 </button>
-              )}
+                <div className="px-4 font-bold min-w-[120px] text-center capitalize text-sm text-slate-700 dark:text-slate-200">
+                  {format(filterMonth, 'MMMM yyyy')}
+                </div>
+                <button 
+                  onClick={() => {
+                    const nextMonth = new Date(filterMonth);
+                    nextMonth.setMonth(nextMonth.getMonth() + 1);
+                    setFilterMonth(nextMonth);
+                    setDateRange(null);
+                  }}
+                  className="p-2 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-lg transition-all text-slate-500 hover:text-indigo-600"
+                >
+                  <ChevronRight className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
-            <div className="h-6 w-px bg-slate-200 hidden lg:block" />
+            {/* Group 2: View Mode & Date Range */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+              {/* View Mode Toggle */}
+              <div className="flex p-1 bg-slate-100 dark:bg-slate-800 rounded-xl">
+                <button
+                  onClick={() => setViewMode('due')}
+                  className={cn(
+                    "px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2",
+                    viewMode === 'due' 
+                      ? "bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm" 
+                      : "text-slate-500 dark:text-slate-400 hover:text-slate-700"
+                  )}
+                >
+                  <Calendar className="w-4 h-4" />
+                  <span>Vencimento</span>
+                </button>
+                <button
+                  onClick={() => setViewMode('purchase')}
+                  className={cn(
+                    "px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2",
+                    viewMode === 'purchase' 
+                      ? "bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm" 
+                      : "text-slate-500 dark:text-slate-400 hover:text-slate-700"
+                  )}
+                >
+                  <PlusCircle className="w-4 h-4" />
+                  <span>Compra</span>
+                </button>
+              </div>
+
+              {/* Date Range Filter */}
+              <div className="flex items-center gap-3 px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm">
+                <Filter className="w-4 h-4 text-slate-400 shrink-0" />
+                <div className="flex items-center gap-2 shrink-0">
+                  <input 
+                    type="date"
+                    value={dateRange?.start || ''}
+                    onChange={(e) => setDateRange({ start: e.target.value, end: dateRange?.end || '' })}
+                    className="text-xs font-bold border-none bg-transparent focus:ring-0 p-0 w-[105px] text-slate-600 dark:text-slate-300"
+                  />
+                  <span className="text-slate-300 dark:text-slate-600 font-bold">→</span>
+                  <input 
+                    type="date"
+                    value={dateRange?.end || ''}
+                    onChange={(e) => setDateRange({ start: dateRange?.start || '', end: e.target.value })}
+                    className="text-xs font-bold border-none bg-transparent focus:ring-0 p-0 w-[105px] text-slate-600 dark:text-slate-300"
+                  />
+                </div>
+                {dateRange && (
+                  <button 
+                    onClick={() => setDateRange(null)}
+                    className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full text-slate-400 hover:text-rose-500 transition-colors"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+            </div>
 
             <button
               onClick={handleExportCSV}
               disabled={displayTransactions.length === 0}
-              className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
-              title="Exportar para CSV"
+              className="flex items-center justify-center gap-2 px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-bold transition-all shadow-lg shadow-indigo-200 dark:shadow-none disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <Download className="w-4 h-4 text-indigo-600" />
-              <span className="hidden sm:inline">Exportar</span>
+              <Download className="w-4 h-4" />
+              <span>Exportar Dados</span>
             </button>
           </div>
         </div>
 
         {/* Summary Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6 mb-8">
           <SummaryCard 
             title="Saldo Total" 
             amount={totalCurrentBalance} 
-            icon={<Wallet className="w-6 h-6" />} 
+            icon={<Wallet className="w-5 h-5 sm:w-6 sm:h-6" />} 
             color="indigo"
             alertOnNegative={true}
           />
           <SummaryCard 
             title="Saldo do Mês" 
             amount={balance} 
-            icon={<TrendingUp className="w-6 h-6" />} 
+            icon={<TrendingUp className="w-5 h-5 sm:w-6 sm:h-6" />} 
             color="indigo"
             trend={balanceTrend}
             alertOnNegative={true}
@@ -1578,14 +1575,14 @@ function AppContent() {
           <SummaryCard 
             title="Receita Mensal" 
             amount={totals.income} 
-            icon={<ArrowUpRight className="w-6 h-6" />} 
+            icon={<ArrowUpRight className="w-5 h-5 sm:w-6 sm:h-6" />} 
             color="emerald"
             trend={incomeTrend}
           />
           <SummaryCard 
             title="Despesas Mensais" 
             amount={totals.expense} 
-            icon={<ArrowDownRight className="w-6 h-6" />} 
+            icon={<ArrowDownRight className="w-5 h-5 sm:w-6 sm:h-6" />} 
             color="rose"
             trend={expenseTrend}
           />
@@ -2505,20 +2502,20 @@ function SummaryCard({ title, amount, icon, color, trend, alertOnNegative = fals
 
   return (
     <div className={cn(
-      "bg-white dark:bg-slate-900 p-5 sm:p-6 rounded-2xl border transition-all duration-300 shadow-sm hover:shadow-md relative overflow-hidden",
+      "bg-white dark:bg-slate-900 p-4 sm:p-6 rounded-2xl border transition-all duration-300 shadow-sm hover:shadow-md relative overflow-hidden",
       isNegative && alertOnNegative ? "border-rose-200 dark:border-rose-900/50 bg-rose-50/20 dark:bg-rose-900/10" : "border-slate-200 dark:border-slate-800"
     )}>
       {isNegative && alertOnNegative && (
         <div className="absolute top-0 left-0 w-1 h-full bg-rose-500" />
       )}
-      <div className="flex justify-between items-start mb-4">
-        <div className={cn("p-3 rounded-xl", colors[color])}>
+      <div className="flex justify-between items-start mb-3 sm:mb-4">
+        <div className={cn("p-2 sm:p-3 rounded-xl", colors[color])}>
           {icon}
         </div>
-        <div className="flex flex-col items-end gap-2">
+        <div className="flex flex-col items-end gap-1.5 sm:gap-2">
           {trend && (
             <span className={cn(
-              "text-xs font-bold px-2 py-1 rounded-full",
+              "text-[10px] sm:text-xs font-bold px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-full",
               getTrendColor()
             )}>
               {trend}
@@ -2528,18 +2525,18 @@ function SummaryCard({ title, amount, icon, color, trend, alertOnNegative = fals
             <motion.div
               initial={{ x: 20, opacity: 0 }}
               animate={{ x: 0, opacity: 1 }}
-              className="flex items-center gap-1 text-rose-600 dark:text-rose-400 bg-rose-100 dark:bg-rose-900/30 px-2 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider border border-rose-200 dark:border-rose-800"
+              className="flex items-center gap-1 text-rose-600 dark:text-rose-400 bg-rose-100 dark:bg-rose-900/30 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-lg text-[9px] sm:text-[10px] font-bold uppercase tracking-wider border border-rose-200 dark:border-rose-800"
             >
-              <AlertTriangle className="w-3 h-3" />
-              <span>Atenção</span>
+              <AlertTriangle className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
+              <span className="hidden xs:inline">Atenção</span>
             </motion.div>
           )}
         </div>
       </div>
-      <h4 className="text-slate-500 dark:text-slate-400 text-xs sm:text-sm font-medium mb-1">{title}</h4>
-      <div className="flex items-baseline gap-2">
+      <h4 className="text-slate-500 dark:text-slate-400 text-[10px] sm:text-sm font-medium mb-0.5 sm:mb-1 truncate">{title}</h4>
+      <div className="flex items-baseline gap-1 sm:gap-2">
         <p className={cn(
-          "text-xl sm:text-2xl font-bold tracking-tight",
+          "text-base sm:text-2xl font-bold tracking-tight truncate",
           isNegative && alertOnNegative ? "text-rose-700 dark:text-rose-400" : "text-slate-900 dark:text-slate-100"
         )}>
           {(Number(amount) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
