@@ -87,7 +87,12 @@ service cloud.firestore {
     function isAdmin() {
       return isAuthenticated() &&
         (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', 'user') == 'admin' ||
-          (request.auth.token.email == "Gamml1996@gmail.com" && request.auth.token.email_verified == true));
+          (request.auth.token.email == "gamml1996@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    function isAuthorized() {
+      return isAdmin() || 
+        (isAuthenticated() && exists(/databases/$(database)/documents/allowed_users/$(request.auth.token.email)));
     }
 
     function isValidEmail(email) {
@@ -150,7 +155,7 @@ service cloud.firestore {
 
     // Users collection
     match /users/{userId} {
-      allow read: if isOwner(userId) || isAdmin();
+      allow read: if (isOwner(userId) || isAdmin()) && isAuthorized();
       allow create: if isOwner(userId) && isValidUser(request.resource.data) && 
                     (!('role' in request.resource.data) || request.resource.data.role == 'user' || isAdmin());
       allow update: if isOwner(userId) && isValidUser(request.resource.data) && 
@@ -160,34 +165,40 @@ service cloud.firestore {
 
     // Accounts collection
     match /accounts/{accountId} {
-      allow read: if isAuthenticated() && (resource == null || resource.data.userId == request.auth.uid || isAdmin());
-      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid && isValidAccount(request.resource.data);
-      allow update: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin()) && isValidAccount(request.resource.data);
-      allow delete: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow read: if isAuthorized() && (resource == null || resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isAuthorized() && request.resource.data.userId == request.auth.uid && isValidAccount(request.resource.data);
+      allow update: if isAuthorized() && (resource.data.userId == request.auth.uid || isAdmin()) && isValidAccount(request.resource.data);
+      allow delete: if isAuthorized() && (resource.data.userId == request.auth.uid || isAdmin());
     }
 
     // Transactions collection
     match /transactions/{transactionId} {
-      allow read: if isAuthenticated() && (resource == null || resource.data.userId == request.auth.uid || isAdmin());
-      allow create: if isNewDocOwner() && isValidTransaction(request.resource.data);
-      allow update: if (isDocOwner() || isAdmin()) && isNewDocOwner() && isValidTransaction(request.resource.data);
-      allow delete: if isDocOwner() || isAdmin();
+      allow read: if isAuthorized() && (resource == null || resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isAuthorized() && isNewDocOwner() && isValidTransaction(request.resource.data);
+      allow update: if isAuthorized() && (isDocOwner() || isAdmin()) && isNewDocOwner() && isValidTransaction(request.resource.data);
+      allow delete: if isAuthorized() && (isDocOwner() || isAdmin());
     }
 
     // Categories collection
     match /categories/{categoryId} {
-      allow read: if isAuthenticated() && (resource == null || resource.data.userId == request.auth.uid || resource.data.userId == null || isAdmin());
-      allow create: if isAuthenticated() && isValidCategory(request.resource.data);
-      allow update: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin()) && isValidCategory(request.resource.data);
-      allow delete: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow read: if isAuthorized() && (resource == null || resource.data.userId == request.auth.uid || resource.data.userId == null || isAdmin());
+      allow create: if isAuthorized() && isValidCategory(request.resource.data);
+      allow update: if isAuthorized() && (resource.data.userId == request.auth.uid || isAdmin()) && isValidCategory(request.resource.data);
+      allow delete: if isAuthorized() && (resource.data.userId == request.auth.uid || isAdmin());
     }
 
     // Budgets collection
     match /budgets/{budgetId} {
-      allow read: if isDocOwner() || isAdmin();
-      allow create: if isNewDocOwner() && isValidBudget(request.resource.data);
-      allow update: if (isDocOwner() || isAdmin()) && isNewDocOwner() && isValidBudget(request.resource.data);
-      allow delete: if isDocOwner() || isAdmin();
+      allow read: if isAuthorized() && (isDocOwner() || isAdmin());
+      allow create: if isAuthorized() && isNewDocOwner() && isValidBudget(request.resource.data);
+      allow update: if isAuthorized() && (isDocOwner() || isAdmin()) && isNewDocOwner() && isValidBudget(request.resource.data);
+      allow delete: if isAuthorized() && (isDocOwner() || isAdmin());
+    }
+
+    // Allowed Users collection (Whitelist)
+    match /allowed_users/{email} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
     }
 
     // Default deny

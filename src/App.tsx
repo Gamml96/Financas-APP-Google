@@ -147,6 +147,8 @@ function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+const ADMIN_EMAIL = "gamml1996@gmail.com";
+
 function calculateDueDate(purchaseDate: Date, closingDay: number, dueDay: number): Date {
   const purchase = startOfDay(purchaseDate);
   
@@ -376,6 +378,7 @@ function AppContent() {
   const [customCategories, setCustomCategories] = useState<Category[]>([]);
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [isAuthReady, setIsAuthReady] = useState(false);
+  const [isAuthorized, setIsAuthorized] = useState<boolean | null>(null);
   const [viewMode, setViewMode] = useState<'purchase' | 'due'>('due');
   const [analysisLevel, setAnalysisLevel] = useState<'category' | 'subcategory'>('subcategory');
   const [showAddModal, setShowAddModal] = useState(false);
@@ -565,7 +568,24 @@ function AppContent() {
 
   // Auth Listener
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      if (currentUser) {
+        // Check if user is authorized
+        const userEmail = currentUser.email?.toLowerCase() || '';
+        if (userEmail === ADMIN_EMAIL) {
+          setIsAuthorized(true);
+        } else {
+          try {
+            const allowedDoc = await getDoc(doc(db, 'allowed_users', userEmail));
+            setIsAuthorized(allowedDoc.exists());
+          } catch (error) {
+            console.error("Erro ao verificar autorização:", error);
+            setIsAuthorized(false);
+          }
+        }
+      } else {
+        setIsAuthorized(null);
+      }
       setUser(currentUser);
       setIsAuthReady(true);
       setLoading(false);
@@ -1402,6 +1422,14 @@ function AppContent() {
     return (
       <div className={theme === 'dark' ? 'dark' : ''}>
         <LoginView onLogin={signInWithGoogle} />
+      </div>
+    );
+  }
+
+  if (isAuthorized === false) {
+    return (
+      <div className={theme === 'dark' ? 'dark' : ''}>
+        <AccessDeniedView onLogout={logout} userEmail={user.email || ''} />
       </div>
     );
   }
@@ -2517,7 +2545,7 @@ function LoginView({ onLogin }: { onLogin: () => void }) {
           onClick={onLogin}
           className="w-full flex items-center justify-center gap-3 bg-white dark:bg-slate-800 border-2 border-slate-100 dark:border-slate-700 py-3 rounded-xl font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 hover:border-indigo-100 dark:hover:border-indigo-900 transition-all"
         >
-          <img src="https://www.google.com/favicon.ico" className="w-5 h-5" alt="Google" />
+          <img src="https://www.google.com/favicon.ico" className="w-5 h-5" alt="Google" referrerPolicy="no-referrer" />
           Continuar com Google
         </button>
         
@@ -2529,11 +2557,43 @@ function LoginView({ onLogin }: { onLogin: () => void }) {
   );
 }
 
+function AccessDeniedView({ onLogout, userEmail }: { onLogout: () => void, userEmail: string }) {
+  return (
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex items-center justify-center p-4">
+      <div className="max-w-md w-full bg-white dark:bg-slate-900 rounded-3xl shadow-2xl p-8 border border-slate-100 dark:border-slate-800 text-center">
+        <div className="w-16 h-16 bg-rose-100 dark:bg-rose-900/40 text-rose-600 dark:text-rose-400 rounded-2xl flex items-center justify-center mx-auto mb-6">
+          <Lock className="w-8 h-8" />
+        </div>
+        <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100 mb-2">Acesso Restrito</h1>
+        <p className="text-slate-500 dark:text-slate-400 mb-6">
+          Olá, <span className="font-semibold text-slate-700 dark:text-slate-300">{userEmail}</span>. 
+          Seu acesso ainda não foi liberado pelo administrador.
+        </p>
+        
+        <div className="p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-900/50 rounded-2xl mb-8">
+          <p className="text-xs text-amber-700 dark:text-amber-400">
+            Entre em contato com o proprietário do app para solicitar sua liberação.
+          </p>
+        </div>
+
+        <button 
+          onClick={onLogout}
+          className="w-full flex items-center justify-center gap-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 py-3 rounded-xl font-bold hover:bg-slate-200 dark:hover:bg-slate-700 transition-all active:scale-95"
+        >
+          <LogOut className="w-4 h-4" />
+          Sair da conta
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function SettingsManager({ userProfile, onUpdateProfile, onResetData }: { userProfile: any, onUpdateProfile: (data: any) => Promise<void>, onResetData: () => void }) {
   const [name, setName] = useState(userProfile?.displayName || '');
   const [reminderDays, setReminderDays] = useState(userProfile?.reminderDaysBefore || 3);
   const [isSavingName, setIsSavingName] = useState(false);
   const [isSavingReminders, setIsSavingReminders] = useState(false);
+  const isAdmin = userProfile?.email === ADMIN_EMAIL;
 
   useEffect(() => {
     if (userProfile?.displayName) {
@@ -2615,6 +2675,13 @@ function SettingsManager({ userProfile, onUpdateProfile, onResetData }: { userPr
         </div>
       </div>
 
+      {isAdmin && (
+        <div className="pt-6 border-t border-slate-100 dark:border-slate-800">
+          <h3 className="text-sm font-semibold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider mb-4">Gerenciar Acessos</h3>
+          <AllowedUsersManager />
+        </div>
+      )}
+
       <div className="pt-6 border-t border-slate-100 dark:border-slate-800">
         <h3 className="text-sm font-semibold text-rose-600 dark:text-rose-400 uppercase tracking-wider mb-4">Zona de Perigo</h3>
         <div className="bg-rose-50 dark:bg-rose-900/20 border border-rose-100 dark:border-rose-900/50 p-4 rounded-2xl">
@@ -2640,6 +2707,83 @@ function SettingsManager({ userProfile, onUpdateProfile, onResetData }: { userPr
 
       <div className="pt-6 border-t border-slate-100 dark:border-slate-800 text-center">
         <p className="text-[10px] text-slate-400 dark:text-slate-500">Versão 1.2.0 • FluxiaFinance</p>
+      </div>
+    </div>
+  );
+}
+
+function AllowedUsersManager() {
+  const [email, setEmail] = useState('');
+  const [allowedUsers, setAllowedUsers] = useState<any[]>([]);
+  const [isAdding, setIsAdding] = useState(false);
+
+  useEffect(() => {
+    const unsubscribe = onSnapshot(collection(db, 'allowed_users'), (snapshot) => {
+      setAllowedUsers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const handleAddUser = async () => {
+    if (!email || !email.includes('@')) return;
+    setIsAdding(true);
+    try {
+      await setDoc(doc(db, 'allowed_users', email.toLowerCase().trim()), {
+        email: email.toLowerCase().trim(),
+        addedAt: Timestamp.now(),
+        addedBy: auth.currentUser?.email
+      });
+      setEmail('');
+    } catch (error) {
+      console.error("Erro ao adicionar usuário:", error);
+    } finally {
+      setIsAdding(false);
+    }
+  };
+
+  const handleRemoveUser = async (userEmail: string) => {
+    try {
+      await deleteDoc(doc(db, 'allowed_users', userEmail));
+    } catch (error) {
+      console.error("Erro ao remover usuário:", error);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex gap-2">
+        <input 
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          placeholder="E-mail para liberar"
+          className="flex-1 px-4 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-slate-900 dark:text-slate-100"
+        />
+        <button 
+          onClick={handleAddUser}
+          disabled={isAdding || !email}
+          className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-indigo-700 transition-all disabled:opacity-50"
+        >
+          {isAdding ? '...' : 'Liberar'}
+        </button>
+      </div>
+
+      <div className="space-y-2 max-h-48 overflow-y-auto pr-1 custom-scrollbar">
+        {allowedUsers.length === 0 ? (
+          <p className="text-xs text-slate-400 text-center py-2">Nenhum usuário liberado além de você.</p>
+        ) : (
+          allowedUsers.map(u => (
+            <div key={u.id} className="flex items-center justify-between p-2 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-100 dark:border-slate-700">
+              <span className="text-xs text-slate-600 dark:text-slate-300 truncate">{u.email}</span>
+              <button 
+                onClick={() => handleRemoveUser(u.id)}
+                className="text-rose-500 hover:text-rose-700 p-1"
+              >
+                <Trash2 className="w-3 h-3" />
+              </button>
+            </div>
+          ))
+        )}
       </div>
     </div>
   );
