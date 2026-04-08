@@ -132,7 +132,7 @@ import {
   AreaChart,
   Area
 } from 'recharts';
-import { format, startOfMonth, endOfMonth, subMonths, isWithinInterval, parseISO, addMonths, setDate, startOfDay, addWeeks, addYears, subDays, isAfter, eachDayOfInterval, isSameDay, isBefore } from 'date-fns';
+import { format, startOfMonth, endOfMonth, subMonths, isWithinInterval, parseISO, addMonths, setDate, startOfDay, endOfDay, addDays, addWeeks, addYears, subDays, isAfter, eachDayOfInterval, isSameDay, isBefore } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { motion, AnimatePresence } from 'motion/react';
 import Papa from 'papaparse';
@@ -509,17 +509,17 @@ function AppContent() {
 
     const checkUpcomingBills = () => {
       const now = new Date();
-      const reminderDays = userProfile?.reminderDaysBefore || 3;
-      const futureDate = new Date();
-      futureDate.setDate(now.getDate() + reminderDays);
+      const reminderDays = userProfile?.reminderDaysBefore !== undefined ? userProfile.reminderDaysBefore : 3;
+      const futureDate = endOfDay(addDays(now, reminderDays));
+      const startRange = startOfDay(now);
 
       transactions.forEach(tx => {
         // Only check expenses with a due date
         if (tx.type === 'expense' && tx.dueDate) {
           const dueDate = tx.dueDate instanceof Timestamp ? tx.dueDate.toDate() : new Date(tx.dueDate);
           
-          // If due within configured days and in the future
-          if (dueDate > now && dueDate <= futureDate) {
+          // If due within configured days (including today)
+          if (dueDate >= startRange && dueDate <= futureDate) {
             const storageKey = `notified_${user.uid}_${tx.id}`;
             if (!localStorage.getItem(storageKey)) {
               try {
@@ -2398,10 +2398,13 @@ function SettingsManager({ userProfile, onUpdateProfile, onResetData }: { userPr
             <div className="flex gap-2">
               <input 
                 type="number"
-                min="1"
+                min="0"
                 max="30"
                 value={reminderDays}
-                onChange={(e) => setReminderDays(parseInt(e.target.value) || 1)}
+                onChange={(e) => {
+                  const val = e.target.value === '' ? 0 : parseInt(e.target.value);
+                  setReminderDays(isNaN(val) ? 0 : val);
+                }}
                 className="flex-1 px-4 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-slate-900 dark:text-slate-100"
                 disabled={isSavingReminders}
               />
