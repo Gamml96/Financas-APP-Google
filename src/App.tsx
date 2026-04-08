@@ -392,6 +392,9 @@ function AppContent() {
   const [filterMonth, setFilterMonth] = useState(new Date());
   const [dateRange, setDateRange] = useState<{ start: string; end: string } | null>(null);
   const [typeFilter, setTypeFilter] = useState<'all' | 'income' | 'expense'>('all');
+  const [categoryFilter, setCategoryFilter] = useState<string>('all');
+  const [paymentTypeFilter, setPaymentTypeFilter] = useState<'all' | 'credit' | 'debit'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'paid' | 'pending'>('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedAccountId, setSelectedAccountId] = useState<string>('all');
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
@@ -748,6 +751,18 @@ function AppContent() {
     if (typeFilter !== 'all') {
       filtered = filtered.filter(tx => tx.type === typeFilter);
     }
+
+    if (categoryFilter !== 'all') {
+      filtered = filtered.filter(tx => tx.category === categoryFilter);
+    }
+
+    if (paymentTypeFilter !== 'all') {
+      filtered = filtered.filter(tx => tx.paymentType === paymentTypeFilter);
+    }
+
+    if (statusFilter !== 'all') {
+      filtered = filtered.filter(tx => statusFilter === 'paid' ? tx.isPaid : !tx.isPaid);
+    }
     
     if (searchTerm.trim()) {
       const term = searchTerm.toLowerCase().trim();
@@ -758,7 +773,7 @@ function AppContent() {
     }
     
     return filtered;
-  }, [filteredTransactions, typeFilter, searchTerm]);
+  }, [filteredTransactions, typeFilter, categoryFilter, paymentTypeFilter, statusFilter, searchTerm]);
 
   const totals = useMemo(() => {
     return filteredTransactions.reduce((acc, tx) => {
@@ -1219,19 +1234,22 @@ function AppContent() {
 
       if (updateFuture && editingTransaction.groupId) {
         const batch = writeBatch(db);
-        const currentTxDate = editingTransaction.date instanceof Timestamp ? editingTransaction.date.toDate() : new Date(editingTransaction.date);
+        const currentTxDate = editingTransaction.date instanceof Timestamp 
+          ? editingTransaction.date.toDate() 
+          : (typeof editingTransaction.date === 'string' ? parseISO(editingTransaction.date) : new Date(editingTransaction.date));
         
         // Find all transactions in the group that are on or after the current one's date and have the same type
-        const futureTransactions = transactions.filter(tx => 
-          tx.groupId === editingTransaction.groupId && 
-          tx.type === editingTransaction.type &&
-          (tx.date instanceof Timestamp ? tx.date.toDate() : new Date(tx.date)) >= currentTxDate
-        );
+        const futureTransactions = transactions.filter(tx => {
+          const txDate = tx.date instanceof Timestamp 
+            ? tx.date.toDate() 
+            : (typeof tx.date === 'string' ? parseISO(tx.date) : new Date(tx.date));
+          
+          return tx.groupId === editingTransaction.groupId && 
+                 tx.type === editingTransaction.type &&
+                 txDate >= currentTxDate;
+        });
 
         futureTransactions.forEach(tx => {
-          // We update common fields. 
-          // We don't update 'date' or 'dueDate' for future ones to avoid collapsing the whole series into one day.
-          // But we DO update the current one's date.
           const isCurrent = tx.id === editingTransaction.id;
           
           const updateData: any = {
@@ -1241,8 +1259,15 @@ function AppContent() {
             accountId: baseData.accountId,
             paymentType: baseData.paymentType,
             type: baseData.type,
-            isPaid: baseData.isPaid
+            isRecurring: baseData.isRecurring,
+            frequency: baseData.frequency,
+            recurringMonths: baseData.recurringMonths
           };
+
+          // Only update isPaid if it's explicitly provided (to avoid setting it to undefined)
+          if (baseData.isPaid !== undefined) {
+            updateData.isPaid = baseData.isPaid;
+          }
 
           if (isCurrent) {
             updateData.date = Timestamp.fromDate(purchaseDate);
@@ -1699,23 +1724,56 @@ function AppContent() {
                   </div>
                 </div>
 
-                <div className="flex-1 max-w-xs relative">
-                  <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                  <input 
-                    type="text"
-                    placeholder="Buscar transação..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="w-full pl-9 pr-4 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 outline-none transition-all text-slate-900 dark:text-slate-100"
-                  />
-                  {searchTerm && (
-                    <button 
-                      onClick={() => setSearchTerm('')}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
-                  )}
+                <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto">
+                  <div className="flex-1 min-w-[200px] relative">
+                    <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input 
+                      type="text"
+                      placeholder="Buscar transação..."
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      className="w-full pl-9 pr-4 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 outline-none transition-all text-slate-900 dark:text-slate-100"
+                    />
+                    {searchTerm && (
+                      <button 
+                        onClick={() => setSearchTerm('')}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    )}
+                  </div>
+
+                  <select
+                    value={categoryFilter}
+                    onChange={(e) => setCategoryFilter(e.target.value)}
+                    className="px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-700 dark:text-slate-300"
+                  >
+                    <option value="all">Todas Categorias</option>
+                    {allCategories.filter(c => !c.parentId).map(cat => (
+                      <option key={cat.id} value={cat.name}>{cat.name}</option>
+                    ))}
+                  </select>
+
+                  <select
+                    value={paymentTypeFilter}
+                    onChange={(e) => setPaymentTypeFilter(e.target.value as any)}
+                    className="px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-700 dark:text-slate-300"
+                  >
+                    <option value="all">Todos Pagamentos</option>
+                    <option value="debit">Débito / Dinheiro</option>
+                    <option value="credit">Cartão de Crédito</option>
+                  </select>
+
+                  <select
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(e.target.value as any)}
+                    className="px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-700 dark:text-slate-300"
+                  >
+                    <option value="all">Todos Status</option>
+                    <option value="paid">Pago / Recebido</option>
+                    <option value="pending">Pendente</option>
+                  </select>
                 </div>
 
                 <div className="flex gap-2">
@@ -1800,7 +1858,7 @@ function AppContent() {
                 </button>
               </div>
 
-              {/* Analysis Level Toggle (Grouping) */}
+              {/* Category/Subcategory Toggle */}
               <div className="flex p-1 bg-slate-100 dark:bg-slate-800 rounded-xl shadow-inner">
                 <button
                   onClick={() => setAnalysisLevel('category')}
@@ -1827,6 +1885,7 @@ function AppContent() {
                   <span>Subcategorias</span>
                 </button>
               </div>
+
             </div>
           </div>
 
@@ -2268,12 +2327,17 @@ function AppContent() {
                   onClick={async () => {
                     try {
                       const batch = writeBatch(db);
-                      const currentTxDate = transactionToDelete.date instanceof Timestamp ? transactionToDelete.date.toDate() : new Date(transactionToDelete.date);
-                      const futureTransactions = transactions.filter(tx => 
-                        tx.groupId === transactionToDelete.groupId && 
-                        tx.type === transactionToDelete.type &&
-                        (tx.date instanceof Timestamp ? tx.date.toDate() : new Date(tx.date)) >= currentTxDate
-                      );
+                      const currentTxDate = transactionToDelete.date instanceof Timestamp 
+                        ? transactionToDelete.date.toDate() 
+                        : (typeof transactionToDelete.date === 'string' ? parseISO(transactionToDelete.date) : new Date(transactionToDelete.date));
+                      const futureTransactions = transactions.filter(tx => {
+                        const txDate = tx.date instanceof Timestamp 
+                          ? tx.date.toDate() 
+                          : (typeof tx.date === 'string' ? parseISO(tx.date) : new Date(tx.date));
+                        return tx.groupId === transactionToDelete.groupId && 
+                               tx.type === transactionToDelete.type &&
+                               txDate >= currentTxDate;
+                      });
                       futureTransactions.forEach(tx => {
                         batch.delete(doc(db, 'transactions', tx.id));
                       });
@@ -2745,6 +2809,15 @@ function TransactionItem({ tx, categories, accounts, onEdit, onDelete }: {
             <h5 className="font-semibold text-slate-900 dark:text-slate-100 truncate max-w-[150px] sm:max-w-none">
               {tx.description || tx.category}
             </h5>
+            {tx.isPaid ? (
+              <div className="bg-emerald-50 dark:bg-emerald-900/30 p-1 rounded" title="Pago/Recebido">
+                <CheckCircle2 className="w-3 h-3 text-emerald-500" />
+              </div>
+            ) : (
+              <div className="bg-amber-50 dark:bg-amber-900/30 p-1 rounded" title="Pendente">
+                <AlertCircle className="w-3 h-3 text-amber-500" />
+              </div>
+            )}
             <div className="flex items-center gap-1.5">
               {tx.isRecurring && (
                 <div className="bg-indigo-50 dark:bg-indigo-900/30 p-1 rounded" title="Recorrente">
@@ -3013,6 +3086,7 @@ function TransactionForm({ onSubmit, onCancel, categories: allCategories, accoun
     accountId: initialData ? initialData.accountId : (accounts.find(a => a.isFavorite)?.id || accounts[0]?.id || ''),
     toAccountId: '',
     installments: initialData ? (initialData.totalInstallments?.toString() || '1') : '1',
+    isPaid: initialData ? (initialData.isPaid || false) : (initialData?.type === 'income' ? true : false),
     isRecurring: initialData ? (initialData.isRecurring || false) : false,
     frequency: initialData ? (initialData.frequency || 'monthly') : 'monthly' as 'weekly' | 'monthly' | 'yearly',
     recurringMonths: '12',
@@ -3317,60 +3391,86 @@ function TransactionForm({ onSubmit, onCancel, categories: allCategories, accoun
         </div>
       </div>
 
-      {formData.paymentType !== 'credit' && (
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="p-4 bg-slate-50/50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-slate-800 transition-all">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <RefreshCcw className={cn("w-4 h-4", formData.isRecurring ? "text-indigo-600 dark:text-indigo-400" : "text-slate-400 dark:text-slate-600")} />
-              <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">Repetir transação</span>
+              <CheckCircle2 className={cn("w-4 h-4", formData.isPaid ? "text-emerald-600 dark:text-emerald-400" : "text-slate-400 dark:text-slate-600")} />
+              <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                {formData.type === 'income' ? 'Recebido' : 'Pago'}
+              </span>
             </div>
             <button
               type="button"
-              onClick={() => setFormData({ ...formData, isRecurring: !formData.isRecurring })}
+              onClick={() => setFormData({ ...formData, isPaid: !formData.isPaid })}
               className={cn(
                 "w-10 h-5 rounded-full transition-all relative",
-                formData.isRecurring ? "bg-indigo-600" : "bg-slate-300 dark:bg-slate-700"
+                formData.isPaid ? "bg-emerald-600" : "bg-slate-300 dark:bg-slate-700"
               )}
             >
               <div className={cn(
                 "absolute top-1 w-3 h-3 bg-white rounded-full transition-all shadow-sm",
-                formData.isRecurring ? "right-1" : "left-1"
+                formData.isPaid ? "right-1" : "left-1"
               )} />
             </button>
           </div>
-
-          {formData.isRecurring && (
-            <motion.div 
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: 'auto', opacity: 1 }}
-              className="grid grid-cols-2 gap-4 mt-4 pt-4 border-t border-slate-200/60 dark:border-slate-700/60"
-            >
-              <div>
-                <label className="block text-[10px] uppercase tracking-wider font-bold text-slate-400 dark:text-slate-500 mb-1">Frequência</label>
-                <select
-                  value={formData.frequency}
-                  onChange={(e) => setFormData({ ...formData, frequency: e.target.value as any })}
-                  className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-900 dark:text-slate-100"
-                >
-                  <option value="weekly" className="dark:bg-slate-900">Semanal</option>
-                  <option value="monthly" className="dark:bg-slate-900">Mensal</option>
-                  <option value="yearly" className="dark:bg-slate-900">Anual</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-[10px] uppercase tracking-wider font-bold text-slate-400 dark:text-slate-500 mb-1">Repetir por (vezes)</label>
-                <input
-                  type="number"
-                  min="2"
-                  max="60"
-                  value={formData.recurringMonths}
-                  onChange={(e) => setFormData({ ...formData, recurringMonths: e.target.value })}
-                  className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-900 dark:text-slate-100"
-                />
-              </div>
-            </motion.div>
-          )}
         </div>
+
+        {formData.paymentType !== 'credit' && (
+          <div className="p-4 bg-slate-50/50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-slate-800 transition-all">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <RefreshCcw className={cn("w-4 h-4", formData.isRecurring ? "text-indigo-600 dark:text-indigo-400" : "text-slate-400 dark:text-slate-600")} />
+                <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">Repetir</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setFormData({ ...formData, isRecurring: !formData.isRecurring })}
+                className={cn(
+                  "w-10 h-5 rounded-full transition-all relative",
+                  formData.isRecurring ? "bg-indigo-600" : "bg-slate-300 dark:bg-slate-700"
+                )}
+              >
+                <div className={cn(
+                  "absolute top-1 w-3 h-3 bg-white rounded-full transition-all shadow-sm",
+                  formData.isRecurring ? "right-1" : "left-1"
+                )} />
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {formData.isRecurring && formData.paymentType !== 'credit' && (
+        <motion.div 
+          initial={{ height: 0, opacity: 0 }}
+          animate={{ height: 'auto', opacity: 1 }}
+          className="grid grid-cols-2 gap-4 p-4 bg-slate-50/50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-slate-800"
+        >
+          <div>
+            <label className="block text-[10px] uppercase tracking-wider font-bold text-slate-400 dark:text-slate-500 mb-1">Frequência</label>
+            <select
+              value={formData.frequency}
+              onChange={(e) => setFormData({ ...formData, frequency: e.target.value as any })}
+              className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-900 dark:text-slate-100"
+            >
+              <option value="weekly" className="dark:bg-slate-900">Semanal</option>
+              <option value="monthly" className="dark:bg-slate-900">Mensal</option>
+              <option value="yearly" className="dark:bg-slate-900">Anual</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-[10px] uppercase tracking-wider font-bold text-slate-400 dark:text-slate-500 mb-1">Repetir por (vezes)</label>
+            <input
+              type="number"
+              min="2"
+              max="60"
+              value={formData.recurringMonths}
+              onChange={(e) => setFormData({ ...formData, recurringMonths: e.target.value })}
+              className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-900 dark:text-slate-100"
+            />
+          </div>
+        </motion.div>
       )}
 
       <div>
