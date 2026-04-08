@@ -48,6 +48,8 @@ import {
   X,
   Settings,
   CreditCard,
+  LayoutGrid,
+  Layers,
   DollarSign,
   ArrowUpRight,
   ArrowDownRight,
@@ -375,6 +377,7 @@ function AppContent() {
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [viewMode, setViewMode] = useState<'purchase' | 'due'>('due');
+  const [analysisLevel, setAnalysisLevel] = useState<'category' | 'subcategory'>('subcategory');
   const [showAddModal, setShowAddModal] = useState(false);
   const [showAccountModal, setShowAccountModal] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
@@ -910,15 +913,31 @@ function AppContent() {
     analysisTransactions
       .filter(t => t.type === 'expense' && t.category !== 'Transferência')
       .forEach(tx => {
-        if (!data[tx.category]) {
-          const cat = allCategories.find(c => c.name === tx.category) || DEFAULT_CATEGORIES[7];
-          data[tx.category] = { name: tx.category, value: 0, color: cat.color };
+        let categoryName = tx.category;
+        let categoryColor = '#64748b';
+
+        const cat = allCategories.find(c => c.name === tx.category);
+        
+        if (analysisLevel === 'category' && cat?.parentId) {
+          const parent = allCategories.find(p => p.id === cat.parentId);
+          if (parent) {
+            categoryName = parent.name;
+            categoryColor = parent.color;
+          } else {
+            categoryColor = cat.color;
+          }
+        } else if (cat) {
+          categoryColor = cat.color;
+        }
+
+        if (!data[categoryName]) {
+          data[categoryName] = { name: categoryName, value: 0, color: categoryColor };
         }
         const amount = Number(tx.amount) || 0;
-        data[tx.category].value += amount;
+        data[categoryName].value += amount;
       });
     return Object.values(data);
-  }, [analysisTransactions, allCategories]);
+  }, [analysisTransactions, allCategories, analysisLevel]);
 
   const budgetProgress = useMemo(() => {
     const monthStr = format(filterMonth, 'yyyy-MM');
@@ -1751,32 +1770,63 @@ function AppContent() {
               <p className="text-sm text-slate-500 dark:text-slate-400">Entenda seu comportamento de consumo e orçamentos.</p>
             </div>
             
-            {/* View Mode Toggle - MOVED HERE */}
-            <div className="flex p-1 bg-slate-100 dark:bg-slate-800 rounded-xl shadow-inner">
-              <button
-                onClick={() => setViewMode('due')}
-                className={cn(
-                  "px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2",
-                  viewMode === 'due' 
-                    ? "bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm" 
-                    : "text-slate-500 dark:text-slate-400 hover:text-slate-700"
-                )}
-              >
-                <Calendar className="w-4 h-4" />
-                <span>Data de Vencimento</span>
-              </button>
-              <button
-                onClick={() => setViewMode('purchase')}
-                className={cn(
-                  "px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2",
-                  viewMode === 'purchase' 
-                    ? "bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm" 
-                    : "text-slate-500 dark:text-slate-400 hover:text-slate-700"
-                )}
-              >
-                <PlusCircle className="w-4 h-4" />
-                <span>Data da Compra</span>
-              </button>
+            {/* Analysis Mode Toggles */}
+            <div className="flex flex-wrap gap-3">
+              {/* View Mode Toggle (Date basis) */}
+              <div className="flex p-1 bg-slate-100 dark:bg-slate-800 rounded-xl shadow-inner">
+                <button
+                  onClick={() => setViewMode('due')}
+                  className={cn(
+                    "px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2",
+                    viewMode === 'due' 
+                      ? "bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm" 
+                      : "text-slate-500 dark:text-slate-400 hover:text-slate-700"
+                  )}
+                >
+                  <Calendar className="w-4 h-4" />
+                  <span>Vencimento</span>
+                </button>
+                <button
+                  onClick={() => setViewMode('purchase')}
+                  className={cn(
+                    "px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2",
+                    viewMode === 'purchase' 
+                      ? "bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm" 
+                      : "text-slate-500 dark:text-slate-400 hover:text-slate-700"
+                  )}
+                >
+                  <PlusCircle className="w-4 h-4" />
+                  <span>Compra</span>
+                </button>
+              </div>
+
+              {/* Analysis Level Toggle (Grouping) */}
+              <div className="flex p-1 bg-slate-100 dark:bg-slate-800 rounded-xl shadow-inner">
+                <button
+                  onClick={() => setAnalysisLevel('category')}
+                  className={cn(
+                    "px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2",
+                    analysisLevel === 'category' 
+                      ? "bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm" 
+                      : "text-slate-500 dark:text-slate-400 hover:text-slate-700"
+                  )}
+                >
+                  <LayoutGrid className="w-4 h-4" />
+                  <span>Categorias</span>
+                </button>
+                <button
+                  onClick={() => setAnalysisLevel('subcategory')}
+                  className={cn(
+                    "px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2",
+                    analysisLevel === 'subcategory' 
+                      ? "bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm" 
+                      : "text-slate-500 dark:text-slate-400 hover:text-slate-700"
+                  )}
+                >
+                  <Layers className="w-4 h-4" />
+                  <span>Subcategorias</span>
+                </button>
+              </div>
             </div>
           </div>
 
