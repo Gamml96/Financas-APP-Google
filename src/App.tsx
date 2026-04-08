@@ -759,8 +759,8 @@ function AppContent() {
   const totals = useMemo(() => {
     return filteredTransactions.reduce((acc, tx) => {
       const amount = Number(tx.amount) || 0;
-      if (tx.type === 'income') acc.income += amount;
-      else acc.expense += amount;
+      if (tx.type === 'income' && tx.category !== 'Transferência') acc.income += amount;
+      else if (tx.type === 'expense' && tx.category !== 'Transferência') acc.expense += amount;
       return acc;
     }, { income: 0, expense: 0 });
   }, [filteredTransactions]);
@@ -795,8 +795,8 @@ function AppContent() {
   const previousTotals = useMemo(() => {
     return previousPeriodTransactions.reduce((acc, tx) => {
       const amount = Number(tx.amount) || 0;
-      if (tx.type === 'income') acc.income += amount;
-      else acc.expense += amount;
+      if (tx.type === 'income' && tx.category !== 'Transferência') acc.income += amount;
+      else if (tx.type === 'expense' && tx.category !== 'Transferência') acc.expense += amount;
       return acc;
     }, { income: 0, expense: 0 });
   }, [previousPeriodTransactions]);
@@ -906,14 +906,16 @@ function AppContent() {
 
   const categoryData = useMemo(() => {
     const data: Record<string, { name: string, value: number, color: string }> = {};
-    analysisTransactions.filter(t => t.type === 'expense').forEach(tx => {
-      if (!data[tx.category]) {
-        const cat = allCategories.find(c => c.name === tx.category) || DEFAULT_CATEGORIES[7];
-        data[tx.category] = { name: tx.category, value: 0, color: cat.color };
-      }
-      const amount = Number(tx.amount) || 0;
-      data[tx.category].value += amount;
-    });
+    analysisTransactions
+      .filter(t => t.type === 'expense' && t.category !== 'Transferência')
+      .forEach(tx => {
+        if (!data[tx.category]) {
+          const cat = allCategories.find(c => c.name === tx.category) || DEFAULT_CATEGORIES[7];
+          data[tx.category] = { name: tx.category, value: 0, color: cat.color };
+        }
+        const amount = Number(tx.amount) || 0;
+        data[tx.category].value += amount;
+      });
     return Object.values(data);
   }, [analysisTransactions, allCategories]);
 
