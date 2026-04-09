@@ -135,7 +135,7 @@ import {
   AreaChart,
   Area
 } from 'recharts';
-import { format, startOfMonth, endOfMonth, subMonths, isWithinInterval, parseISO, addMonths, setDate, startOfDay, endOfDay, addDays, addWeeks, addYears, subDays, isAfter, eachDayOfInterval, isSameDay, isBefore } from 'date-fns';
+import { format, startOfMonth, endOfMonth, subMonths, isWithinInterval, parseISO, addMonths, setDate, startOfDay, endOfDay, addDays, addWeeks, addYears, subDays, isAfter, eachDayOfInterval, isSameDay, isBefore, isToday, isYesterday } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { motion, AnimatePresence } from 'motion/react';
 import Papa from 'papaparse';
@@ -1786,7 +1786,7 @@ function AppContent() {
               <div className="flex flex-col gap-6 mb-6">
                 {/* Top Row: Title and Main Actions */}
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                  <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Transações Recentes</h3>
+                  <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Extrato</h3>
                   
                   <div className="flex items-center gap-2 w-full sm:w-auto">
                     <button 
@@ -3051,7 +3051,12 @@ function TransactionItem({ tx, categories, accounts, onEdit, onDelete }: {
             <span className="text-slate-300 dark:text-slate-700 hidden sm:inline">•</span>
             <div className="flex items-center gap-1 shrink-0">
               <Calendar className="w-2.5 h-2.5 text-slate-400" />
-              {format(purchaseDate, 'dd/MM/yy', { locale: ptBR })}
+              <span>{format(purchaseDate, 'dd/MM/yy', { locale: ptBR })}</span>
+              {tx.paymentType === 'credit' && dueDate && (
+                <span className="text-rose-500 dark:text-rose-400 font-medium ml-1">
+                  (Venc. {format(dueDate, 'dd/MM')})
+                </span>
+              )}
             </div>
           </div>
         </div>
@@ -3087,29 +3092,74 @@ function TransactionItem({ tx, categories, accounts, onEdit, onDelete }: {
 }
 
 function TransactionList({ transactions, categories, accounts, onDelete, onEdit }: { transactions: Transaction[], categories: Category[], accounts: Account[], onDelete: (id: string) => void, onEdit: (tx: Transaction) => void }) {
+  const groupedTransactions = useMemo(() => {
+    const groups: Record<string, Transaction[]> = {};
+    
+    // Sort transactions by date (descending)
+    const sorted = [...transactions].sort((a, b) => {
+      const dateA = (a.paymentType === 'credit' && a.dueDate) ? a.dueDate : a.date;
+      const dateB = (b.paymentType === 'credit' && b.dueDate) ? b.dueDate : b.date;
+      const d1 = dateA instanceof Timestamp ? dateA.toDate() : new Date(dateA);
+      const d2 = dateB instanceof Timestamp ? dateB.toDate() : new Date(dateB);
+      return d2.getTime() - d1.getTime();
+    });
+
+    sorted.forEach(tx => {
+      const dateToUse = (tx.paymentType === 'credit' && tx.dueDate) ? tx.dueDate : tx.date;
+      const date = dateToUse instanceof Timestamp ? dateToUse.toDate() : new Date(dateToUse);
+      const dateKey = format(date, 'yyyy-MM-dd');
+      
+      if (!groups[dateKey]) groups[dateKey] = [];
+      groups[dateKey].push(tx);
+    });
+
+    return Object.entries(groups).sort((a, b) => b[0].localeCompare(a[0]));
+  }, [transactions]);
+
   if (transactions.length === 0) {
     return (
       <div className="text-center py-12">
-        <div className="bg-slate-50 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
-          <History className="w-8 h-8 text-slate-300" />
+        <div className="bg-slate-50 dark:bg-slate-900 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+          <History className="w-8 h-8 text-slate-300 dark:text-slate-700" />
         </div>
-        <p className="text-slate-500">Nenhuma transação encontrada para este período.</p>
+        <p className="text-slate-500 dark:text-slate-400">Nenhuma transação encontrada para este período.</p>
       </div>
     );
   }
 
   return (
-    <div className="space-y-4">
-      {transactions.map((tx) => (
-        <TransactionItem 
-          key={tx.id} 
-          tx={tx} 
-          categories={categories} 
-          accounts={accounts}
-          onEdit={onEdit} 
-          onDelete={onDelete} 
-        />
-      ))}
+    <div className="space-y-8">
+      {groupedTransactions.map(([dateKey, txs]) => {
+        const date = parseISO(dateKey);
+        let dateLabel = format(date, "dd 'de' MMMM", { locale: ptBR });
+        
+        if (isToday(date)) dateLabel = 'Hoje';
+        else if (isYesterday(date)) dateLabel = 'Ontem';
+
+        return (
+          <div key={dateKey} className="space-y-4">
+            <div className="flex items-center gap-4">
+              <div className="h-px flex-1 bg-slate-100 dark:bg-slate-800"></div>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 bg-slate-50 dark:bg-slate-950 px-2 py-0.5 rounded-md border border-slate-100 dark:border-slate-800">
+                {dateLabel}
+              </span>
+              <div className="h-px flex-1 bg-slate-100 dark:bg-slate-800"></div>
+            </div>
+            <div className="space-y-3">
+              {txs.map(tx => (
+                <TransactionItem 
+                  key={tx.id} 
+                  tx={tx} 
+                  categories={categories} 
+                  accounts={accounts}
+                  onEdit={onEdit} 
+                  onDelete={onDelete} 
+                />
+              ))}
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
