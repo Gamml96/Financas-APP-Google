@@ -818,7 +818,8 @@ function AppContent() {
       const term = searchTerm.toLowerCase().trim();
       filtered = filtered.filter(tx => 
         (tx.description?.toLowerCase().includes(term)) || 
-        (tx.category?.toLowerCase().includes(term))
+        (tx.category?.toLowerCase().includes(term)) ||
+        (tx.amount?.toString().includes(term))
       );
     }
     
