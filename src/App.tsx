@@ -1001,7 +1001,7 @@ function AppContent() {
         const amount = Number(tx.amount) || 0;
         data[categoryName].value += amount;
       });
-    return Object.values(data);
+    return Object.values(data).sort((a, b) => b.value - a.value);
   }, [analysisTransactions, allCategories, analysisLevel]);
 
   const budgetProgress = useMemo(() => {
@@ -1082,6 +1082,16 @@ function AppContent() {
       };
     });
   }, [accounts, transactions, filterMonth, selectedAccountId]);
+
+  const chartOffset = useMemo(() => {
+    const dataMax = Math.max(...dailyBalanceData.map((i) => i.balance));
+    const dataMin = Math.min(...dailyBalanceData.map((i) => i.balance));
+
+    if (dataMax <= 0) return 0;
+    if (dataMin >= 0) return 1;
+
+    return dataMax / (dataMax - dataMin);
+  }, [dailyBalanceData]);
 
   const handleAddTransaction = async (data: any) => {
     if (!user) return;
@@ -1724,11 +1734,15 @@ function AppContent() {
                   <AreaChart data={dailyBalanceData}>
                     <defs>
                       <linearGradient id="colorBalance" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#6366f1" stopOpacity={0.1}/>
-                        <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
+                        <stop offset={chartOffset} stopColor="#10b981" stopOpacity={0.2}/>
+                        <stop offset={chartOffset} stopColor="#f43f5e" stopOpacity={0.2}/>
+                      </linearGradient>
+                      <linearGradient id="strokeBalance" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset={chartOffset} stopColor="#10b981" stopOpacity={1}/>
+                        <stop offset={chartOffset} stopColor="#f43f5e" stopOpacity={1}/>
                       </linearGradient>
                     </defs>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" className="dark:stroke-slate-800" />
                     <XAxis 
                       dataKey="date" 
                       axisLine={false}
@@ -1744,17 +1758,19 @@ function AppContent() {
                     />
                     <Tooltip 
                       contentStyle={{ 
-                        backgroundColor: '#fff', 
+                        backgroundColor: theme === 'dark' ? '#0f172a' : '#fff', 
                         borderRadius: '12px', 
                         border: 'none', 
-                        boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' 
+                        boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)',
+                        color: theme === 'dark' ? '#f8fafc' : '#1e293b'
                       }}
+                      itemStyle={{ color: theme === 'dark' ? '#f8fafc' : '#1e293b' }}
                       formatter={(value: number) => [value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }), 'Saldo']}
                     />
                     <Area 
                       type="monotone" 
                       dataKey="balance" 
-                      stroke="#6366f1" 
+                      stroke="url(#strokeBalance)" 
                       strokeWidth={3}
                       fillOpacity={1} 
                       fill="url(#colorBalance)" 
