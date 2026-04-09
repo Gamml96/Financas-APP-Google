@@ -48,6 +48,7 @@ import {
   X,
   Settings,
   CreditCard,
+  Eye,
   LayoutGrid,
   Layers,
   DollarSign,
@@ -518,20 +519,20 @@ function AppContent() {
         // Try to use Service Worker for the test notification
         if ("serviceWorker" in navigator) {
           navigator.serviceWorker.ready.then(registration => {
-            registration.showNotification("FluxiaFinance", {
+            registration.showNotification("Tô de Olho", {
               body: "As notificações de contas a vencer estão ativas.",
               icon: "https://www.google.com/favicon.ico",
               badge: "https://www.google.com/favicon.ico"
             });
           }).catch(() => {
             // Fallback to standard notification
-            new Notification("FluxiaFinance", {
+            new Notification("Tô de Olho", {
               body: "As notificações de contas a vencer estão ativas.",
               icon: "https://www.google.com/favicon.ico"
             });
           });
         } else {
-          new Notification("FluxiaFinance", {
+          new Notification("Tô de Olho", {
             body: "As notificações de contas a vencer estão ativas.",
             icon: "https://www.google.com/favicon.ico"
           });
@@ -1494,9 +1495,9 @@ function AppContent() {
               className="flex items-center gap-1.5 sm:gap-2 hover:opacity-80 transition-opacity active:scale-95"
             >
               <div className="bg-indigo-600 p-1.5 sm:p-2 rounded-lg">
-                <Wallet className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
+                <Eye className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
               </div>
-              <span className="text-lg sm:text-xl font-bold tracking-tight text-indigo-900 dark:text-indigo-400 truncate max-w-[120px] sm:max-w-none">FluxiaFinance</span>
+              <span className="text-lg sm:text-xl font-bold tracking-tight text-indigo-900 dark:text-indigo-400 truncate max-w-[120px] sm:max-w-none">Tô de Olho</span>
             </button>
             
             <div className="flex items-center gap-2 sm:gap-4">
@@ -2601,9 +2602,9 @@ function LoginView({ onLogin }: { onLogin: () => void }) {
         className="bg-white dark:bg-slate-900 p-8 rounded-3xl shadow-2xl max-w-md w-full text-center relative z-10 border border-white/10"
       >
         <div className="bg-indigo-100 dark:bg-indigo-900/30 w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-6">
-          <Wallet className="w-8 h-8 text-indigo-600 dark:text-indigo-400" />
+          <Eye className="w-8 h-8 text-indigo-600 dark:text-indigo-400" />
         </div>
-        <h1 className="text-3xl font-bold text-slate-900 dark:text-slate-100 mb-2">FluxiaFinance</h1>
+        <h1 className="text-3xl font-bold text-slate-900 dark:text-slate-100 mb-2">Tô de Olho</h1>
         <p className="text-slate-500 dark:text-slate-400 mb-8">Assuma o controle de sua vida financeira hoje. Simples, seguro e inteligente.</p>
         
         <button 
@@ -2771,7 +2772,7 @@ function SettingsManager({ userProfile, onUpdateProfile, onResetData }: { userPr
       </div>
 
       <div className="pt-6 border-t border-slate-100 dark:border-slate-800 text-center">
-        <p className="text-[10px] text-slate-400 dark:text-slate-500">Versão 1.2.0 • FluxiaFinance</p>
+        <p className="text-[10px] text-slate-400 dark:text-slate-500">Versão 1.2.0 • Tô de Olho</p>
       </div>
     </div>
   );
