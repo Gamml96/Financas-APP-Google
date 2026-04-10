@@ -51,6 +51,7 @@ import {
   Eye,
   LayoutGrid,
   Layers,
+  List,
   DollarSign,
   ArrowUpRight,
   ArrowDownRight,
@@ -416,6 +417,7 @@ function AppContent() {
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
   const [activeView, setActiveView] = useState<'dashboard' | 'invoices'>('dashboard');
+  const [listMode, setListMode] = useState<'detailed' | 'compact'>('compact');
   const [filterMonth, setFilterMonth] = useState(new Date());
   const [dateRange, setDateRange] = useState<{ start: string; end: string } | null>(null);
   const [typeFilter, setTypeFilter] = useState<'all' | 'income' | 'expense'>('all');
@@ -1809,7 +1811,7 @@ function AppContent() {
                   <div className="flex items-center gap-2 w-full sm:w-auto">
                     <button 
                       onClick={() => setShowImportModal(true)}
-                      className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 px-4 py-2 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 transition-all font-medium text-sm"
+                      className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 px-4 py-2 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700 transition-all font-semibold text-sm shadow-sm active:scale-95"
                     >
                       <RefreshCcw className="w-4 h-4" />
                       <span>Importar</span>
@@ -1892,16 +1894,30 @@ function AppContent() {
                   </div>
 
                   {/* Payment Type Filter */}
-                  <div className="h-10">
-                    <select
-                      value={paymentTypeFilter}
-                      onChange={(e) => setPaymentTypeFilter(e.target.value as any)}
-                      className="w-full h-full px-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-700 dark:text-slate-300 cursor-pointer"
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setListMode(prev => prev === 'detailed' ? 'compact' : 'detailed')}
+                      className={cn(
+                        "p-2 rounded-xl border transition-all",
+                        listMode === 'compact' 
+                          ? "bg-indigo-50 dark:bg-indigo-900/30 border-indigo-200 dark:border-indigo-800 text-indigo-600 dark:text-indigo-400"
+                          : "bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400"
+                      )}
+                      title={listMode === 'compact' ? "Visualização Detalhada" : "Visualização Compacta"}
                     >
-                      <option value="all">Todos Pagamentos</option>
-                      <option value="debit">Débito / Dinheiro</option>
-                      <option value="credit">Cartão de Crédito</option>
-                    </select>
+                      {listMode === 'compact' ? <List className="w-4 h-4" /> : <Layers className="w-4 h-4" />}
+                    </button>
+                    <div className="h-10">
+                      <select
+                        value={paymentTypeFilter}
+                        onChange={(e) => setPaymentTypeFilter(e.target.value as any)}
+                        className="w-full h-full px-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-700 dark:text-slate-300 cursor-pointer"
+                      >
+                        <option value="all">Todos Pagamentos</option>
+                        <option value="debit">Débito / Dinheiro</option>
+                        <option value="credit">Cartão de Crédito</option>
+                      </select>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1912,6 +1928,7 @@ function AppContent() {
                 accounts={accounts}
                 onDelete={handleDeleteTransaction} 
                 onEdit={setEditingTransaction}
+                listMode={listMode}
               />
             </div>
           </div>
@@ -3009,12 +3026,13 @@ function CategoryIcon({ iconName, className }: { iconName: string, className?: s
 }
 
 // Transaction Item Component
-function TransactionItem({ tx, categories, accounts, onEdit, onDelete }: { 
+function TransactionItem({ tx, categories, accounts, onEdit, onDelete, isConsolidated }: { 
   tx: Transaction, 
   categories: Category[], 
   accounts: Account[],
   onEdit: (tx: Transaction) => void, 
-  onDelete: (id: string) => void 
+  onDelete: (id: string) => void,
+  isConsolidated?: boolean
 }) {
   const purchaseDate = tx.date instanceof Timestamp ? tx.date.toDate() : new Date(tx.date);
   const dueDate = tx.dueDate instanceof Timestamp ? tx.dueDate.toDate() : (tx.dueDate ? new Date(tx.dueDate) : null);
@@ -3088,33 +3106,66 @@ function TransactionItem({ tx, categories, accounts, onEdit, onDelete }: {
           {tx.type === 'income' ? '+' : '-'}{tx.amount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
         </span>
         
-        <div className="flex items-center gap-1">
-          <button 
-            onClick={() => onEdit(tx)}
-            className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-lg transition-all"
-            title="Editar"
-          >
-            <Edit className="w-4 h-4" />
-          </button>
-          <button 
-            onClick={() => onDelete(tx.id)}
-            className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded-lg transition-all"
-            title="Excluir"
-          >
-            <Trash2 className="w-4 h-4" />
-          </button>
-        </div>
+        {!isConsolidated && (
+          <div className="flex items-center gap-1">
+            <button 
+              onClick={() => onEdit(tx)}
+              className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-lg transition-all"
+              title="Editar"
+            >
+              <Edit className="w-4 h-4" />
+            </button>
+            <button 
+              onClick={() => onDelete(tx.id)}
+              className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded-lg transition-all"
+              title="Excluir"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          </div>
+        )}
       </div>
     </motion.div>
   );
 }
 
-function TransactionList({ transactions, categories, accounts, onDelete, onEdit }: { transactions: Transaction[], categories: Category[], accounts: Account[], onDelete: (id: string) => void, onEdit: (tx: Transaction) => void }) {
+function TransactionList({ transactions, categories, accounts, onDelete, onEdit, listMode }: { transactions: Transaction[], categories: Category[], accounts: Account[], onDelete: (id: string) => void, onEdit: (tx: Transaction) => void, listMode: 'detailed' | 'compact' }) {
+  const processedTransactions = useMemo(() => {
+    if (listMode !== 'compact') return transactions;
+
+    const consolidated: Record<string, Transaction> = {};
+    const result: Transaction[] = [];
+
+    transactions.forEach(tx => {
+      if (tx.paymentType === 'credit' && tx.dueDate) {
+        const date = tx.dueDate instanceof Timestamp ? tx.dueDate.toDate() : new Date(tx.dueDate);
+        const dateKey = format(date, 'yyyy-MM-dd');
+        const key = `${dateKey}_${tx.accountId}`;
+        
+        if (!consolidated[key]) {
+          consolidated[key] = {
+            ...tx,
+            id: key,
+            description: `Fatura ${accounts.find(a => a.id === tx.accountId)?.name || 'Cartão'}`,
+            amount: 0,
+            category: 'Cartão',
+            type: 'expense'
+          };
+        }
+        consolidated[key].amount += Number(tx.amount) || 0;
+      } else {
+        result.push(tx);
+      }
+    });
+
+    return [...result, ...Object.values(consolidated)];
+  }, [transactions, listMode, accounts]);
+
   const groupedTransactions = useMemo(() => {
     const groups: Record<string, Transaction[]> = {};
     
     // Sort transactions by date (descending)
-    const sorted = [...transactions].sort((a, b) => {
+    const sorted = [...processedTransactions].sort((a, b) => {
       const dateA = (a.paymentType === 'credit' && a.dueDate) ? a.dueDate : a.date;
       const dateB = (b.paymentType === 'credit' && b.dueDate) ? b.dueDate : b.date;
       const d1 = dateA instanceof Timestamp ? dateA.toDate() : new Date(dateA);
@@ -3132,7 +3183,7 @@ function TransactionList({ transactions, categories, accounts, onDelete, onEdit 
     });
 
     return Object.entries(groups).sort((a, b) => b[0].localeCompare(a[0]));
-  }, [transactions]);
+  }, [processedTransactions]);
 
   if (transactions.length === 0) {
     return (
@@ -3194,7 +3245,8 @@ function TransactionList({ transactions, categories, accounts, onDelete, onEdit 
                   categories={categories} 
                   accounts={accounts}
                   onEdit={onEdit} 
-                  onDelete={onDelete} 
+                  onDelete={onDelete}
+                  isConsolidated={listMode === 'compact' && tx.id.includes('_')}
                 />
               ))}
             </div>
