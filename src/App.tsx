@@ -597,8 +597,8 @@ function AppContent() {
     };
 
     checkUpcomingBills();
-    // Check every 4 hours
-    const interval = setInterval(checkUpcomingBills, 14400000);
+    // Check every 1 hour
+    const interval = setInterval(checkUpcomingBills, 3600000);
     return () => clearInterval(interval);
   }, [notificationsEnabled, transactions, user, userProfile]);
 
