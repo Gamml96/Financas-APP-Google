@@ -345,7 +345,7 @@ function BottomNav({ activeView, setActiveView, onAdd, onAccounts, onCategories,
   onSettings: () => void
 }) {
   return (
-    <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 px-1 py-3 z-40 flex justify-between items-center pb-6">
+    <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 px-1 py-3 z-40 flex justify-between items-center pb-[calc(1.5rem+var(--sab,0px))]">
       <button 
         onClick={() => setActiveView('invoices')}
         className={cn(
