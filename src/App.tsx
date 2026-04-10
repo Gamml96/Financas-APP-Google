@@ -1300,58 +1300,76 @@ function AppContent() {
           ? editingTransaction.date.toDate() 
           : (typeof editingTransaction.date === 'string' ? parseISO(editingTransaction.date) : new Date(editingTransaction.date));
         
-        const offset = purchaseDate.getTime() - currentTxDate.getTime();
+        // Use startOfDay for offset to avoid time drift issues
+        const offset = startOfDay(purchaseDate).getTime() - startOfDay(currentTxDate).getTime();
+        const dateChanged = offset !== 0;
 
-        // Find all transactions in the group that are on or after the current one's date and have the same type
+        // Find all transactions in the group that are on or after the current one's date
         const futureTransactions = transactions.filter(tx => {
           const txDate = tx.date instanceof Timestamp 
             ? tx.date.toDate() 
             : (typeof tx.date === 'string' ? parseISO(tx.date) : new Date(tx.date));
           
           return tx.groupId === editingTransaction.groupId && 
-                 tx.type === editingTransaction.type &&
                  txDate >= currentTxDate;
         });
 
+        // Identify what changed in the form compared to the editing transaction
+        const changes: any = {};
+        if (Number(data.amount) !== Number(editingTransaction.amount)) changes.amount = Number(data.amount);
+        if (data.category !== editingTransaction.category) changes.category = data.category;
+        if (data.description !== editingTransaction.description) changes.description = data.description;
+        if (data.accountId !== editingTransaction.accountId) changes.accountId = data.accountId;
+        if (data.paymentType !== editingTransaction.paymentType) changes.paymentType = data.paymentType;
+        if (data.type !== editingTransaction.type) changes.type = data.type;
+        if (data.isRecurring !== editingTransaction.isRecurring) changes.isRecurring = data.isRecurring;
+        if (data.frequency !== editingTransaction.frequency) changes.frequency = data.frequency;
+
         futureTransactions.forEach(tx => {
           const isCurrent = tx.id === editingTransaction.id;
-          
+          const updateData: any = { ...changes };
+
           const txOriginalDate = tx.date instanceof Timestamp 
             ? tx.date.toDate() 
             : (typeof tx.date === 'string' ? parseISO(tx.date) : new Date(tx.date));
           
-          const newTxDate = new Date(txOriginalDate.getTime() + offset);
+          // Handle Date
+          let newTxDate = txOriginalDate;
+          if (dateChanged) {
+            newTxDate = new Date(txOriginalDate.getTime() + offset);
+            updateData.date = Timestamp.fromDate(newTxDate);
+          } else if (isCurrent) {
+            updateData.date = Timestamp.fromDate(purchaseDate);
+          }
 
-          const updateData: any = {
-            amount: baseData.amount,
-            category: baseData.category,
-            description: baseData.description,
-            accountId: baseData.accountId,
-            paymentType: baseData.paymentType,
-            type: baseData.type,
-            isRecurring: baseData.isRecurring,
-            frequency: baseData.frequency,
-            recurringMonths: baseData.recurringMonths,
-            date: Timestamp.fromDate(newTxDate)
-          };
-
-          // Handle dueDate
-          let newTxDueDate = newTxDate;
-          if (baseData.paymentType === 'credit') {
-            if (isCurrent && data.dueDate) {
-              newTxDueDate = parseISO(data.dueDate);
-            } else if ((account?.type === 'credit' || account?.type === 'hybrid') && account.closingDay && account.dueDay) {
-              newTxDueDate = calculateDueDate(newTxDate, account.closingDay, account.dueDay);
-            } else if (tx.dueDate) {
-              const txOriginalDueDate = tx.dueDate instanceof Timestamp 
-                ? tx.dueDate.toDate() 
-                : (typeof tx.dueDate === 'string' ? parseISO(tx.dueDate) : new Date(tx.dueDate));
-              newTxDueDate = new Date(txOriginalDueDate.getTime() + offset);
+          // Handle Due Date
+          if (isCurrent) {
+            updateData.dueDate = Timestamp.fromDate(dueDate);
+          } else {
+            // For future transactions
+            if (data.paymentType === 'credit') {
+              const accountChanged = data.accountId !== editingTransaction.accountId;
+              
+              if (dateChanged || accountChanged) {
+                if ((account?.type === 'credit' || account?.type === 'hybrid') && account.closingDay && account.dueDay) {
+                  const newTxDueDate = calculateDueDate(newTxDate, account.closingDay, account.dueDay);
+                  updateData.dueDate = Timestamp.fromDate(newTxDueDate);
+                } else if (tx.dueDate && dateChanged) {
+                  const txOriginalDueDate = tx.dueDate instanceof Timestamp 
+                    ? tx.dueDate.toDate() 
+                    : (typeof tx.dueDate === 'string' ? parseISO(tx.dueDate) : new Date(tx.dueDate));
+                  const newTxDueDate = new Date(txOriginalDueDate.getTime() + offset);
+                  updateData.dueDate = Timestamp.fromDate(newTxDueDate);
+                }
+              }
+            } else if (dateChanged) {
+              updateData.dueDate = Timestamp.fromDate(newTxDate);
             }
           }
-          updateData.dueDate = Timestamp.fromDate(newTxDueDate);
 
-          batch.update(doc(db, 'transactions', tx.id), updateData);
+          if (Object.keys(updateData).length > 0) {
+            batch.update(doc(db, 'transactions', tx.id), updateData);
+          }
         });
         
         await batch.commit();
@@ -1633,7 +1651,7 @@ function AppContent() {
                       <ChevronLeft className="w-5 h-5" />
                     </button>
                     <div className="px-4 font-bold min-w-[130px] text-center capitalize text-sm text-slate-700 dark:text-slate-200">
-                      {format(filterMonth, 'MMMM yyyy')}
+                      {format(filterMonth, 'MMMM yyyy', { locale: ptBR })}
                     </div>
                     <button 
                       onClick={() => {
@@ -3136,14 +3154,37 @@ function TransactionList({ transactions, categories, accounts, onDelete, onEdit 
         if (isToday(date)) dateLabel = 'Hoje';
         else if (isYesterday(date)) dateLabel = 'Ontem';
 
+        const dayIncome = txs.reduce((acc, tx) => tx.type === 'income' ? acc + (Number(tx.amount) || 0) : acc, 0);
+        const dayExpense = txs.reduce((acc, tx) => tx.type === 'expense' ? acc + (Number(tx.amount) || 0) : acc, 0);
+        const dayBalance = dayIncome - dayExpense;
+
         return (
           <div key={dateKey} className="space-y-4">
             <div className="flex items-center gap-4">
-              <div className="h-px flex-1 bg-slate-100 dark:bg-slate-800"></div>
-              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 bg-slate-50 dark:bg-slate-950 px-2 py-0.5 rounded-md border border-slate-100 dark:border-slate-800">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 bg-slate-50 dark:bg-slate-950 px-2 py-0.5 rounded-md border border-slate-100 dark:border-slate-800 shrink-0">
                 {dateLabel}
               </span>
               <div className="h-px flex-1 bg-slate-100 dark:bg-slate-800"></div>
+              <div className="flex items-center gap-2 sm:gap-4 text-[10px] font-bold">
+                {dayIncome > 0 && (
+                  <span className="text-emerald-600 dark:text-emerald-400 hidden sm:inline">
+                    +{dayIncome.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                  </span>
+                )}
+                {dayExpense > 0 && (
+                  <span className="text-rose-600 dark:text-rose-400 hidden sm:inline">
+                    -{dayExpense.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                  </span>
+                )}
+                <span className={cn(
+                  "px-2 py-0.5 rounded-md border whitespace-nowrap",
+                  dayBalance >= 0 
+                    ? "bg-emerald-50 dark:bg-emerald-900/20 border-emerald-100 dark:border-emerald-800 text-emerald-700 dark:text-emerald-400"
+                    : "bg-rose-50 dark:bg-rose-900/20 border-rose-100 dark:border-rose-800 text-rose-700 dark:text-rose-400"
+                )}>
+                  {dayBalance.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                </span>
+              </div>
             </div>
             <div className="space-y-3">
               {txs.map(tx => (
@@ -4389,7 +4430,7 @@ function BudgetManager({ budgets, categories, currentMonth, onSave, onDelete }: 
     <div className="space-y-6">
       <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700">
         <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-4">
-          {editingId ? 'Editar Orçamento' : `Definir Orçamento para ${format(parseISO(currentMonth + "-01"), 'MMMM yyyy', { locale: undefined })}`}
+          {editingId ? 'Editar Orçamento' : `Definir Orçamento para ${format(parseISO(currentMonth + "-01"), 'MMMM yyyy', { locale: ptBR })}`}
         </h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
