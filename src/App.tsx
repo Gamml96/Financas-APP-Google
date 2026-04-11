@@ -4214,7 +4214,7 @@ function CategoryCard({ cat, onEdit, onDelete, isSubcategory = false }: {
           </p>
         </div>
       </div>
-      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
+      <div className="flex items-center gap-1 transition-all">
         <button 
           onClick={() => onEdit(cat)}
           className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-lg transition-all"
