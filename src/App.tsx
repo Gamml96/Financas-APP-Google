@@ -171,7 +171,21 @@ const FINANCIAL_TIPS = [
   "Sua saúde financeira é tão importante quanto sua saúde física. Cuide bem dela!",
   "Evite compras por impulso. Espere 24 horas antes de fechar o carrinho. 🛒",
   "O cartão de crédito é um aliado, não um inimigo. Use com sabedoria e pague o total!",
-  "Pequenas economias hoje geram grandes conquistas amanhã. Acredite no processo."
+  "Pequenas economias hoje geram grandes conquistas amanhã. Acredite no processo.",
+  "Evite ir ao supermercado com fome. Seu estômago é um péssimo consultor financeiro. 🛒",
+  "Automatize seus investimentos. O que os olhos não veem, o coração (e o bolso) não sente falta.",
+  "Revisar suas assinaturas mensais uma vez por semestre pode revelar gastos fantasmas que você nem usa mais.",
+  "A inflação do estilo de vida é real. Se seu salário aumentar, não aumente seus gastos na mesma proporção. 🚀",
+  "Comprar à vista com desconto é sempre melhor do que parcelar 'sem juros' (que muitas vezes já estão embutidos).",
+  "Um orçamento não te impede de gastar, ele te dá permissão para gastar sem culpa. ✅",
+  "Acompanhar seus gastos diariamente te dá o controle que você precisa para mudar seus hábitos.",
+  "Não invista em algo que você não entende. O conhecimento é o melhor escudo contra perdas. 🛡️",
+  "Pequenas economias geram grandes resultados a longo prazo. O poder dos juros compostos é seu melhor amigo.",
+  "Ter metas claras (como uma viagem ou a casa própria) torna o ato de economizar muito mais prazeroso. ✈️",
+  "O equilíbrio é a chave. Economize para o futuro, mas não esqueça de viver o presente com responsabilidade.",
+  "Dívidas com juros altos (como cheque especial e rotativo) devem ser sua prioridade absoluta de quitação. ⚠️",
+  "Aprenda a dizer 'não' para convites que não cabem no seu orçamento atual. Amigos de verdade vão entender.",
+  "Seu extrato bancário é o reflexo das suas prioridades. O que ele diz sobre você hoje? 🤔"
 ];
 
 function calculateDueDate(purchaseDate: Date, closingDay: number, dueDay: number): Date {
