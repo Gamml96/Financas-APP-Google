@@ -2035,18 +2035,40 @@ function AppContent() {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             <div className="lg:col-span-2 bg-white dark:bg-slate-900 p-4 sm:p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
               <h3 className="text-lg font-semibold mb-6 text-slate-900 dark:text-slate-100">Análise de Gastos por Categoria</h3>
-              <div className="h-[350px] w-full">
+              <div className="h-[400px] w-full">
                 {categoryData.length > 0 ? (
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={categoryData}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" className="dark:stroke-slate-800" />
-                      <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} />
-                      <YAxis axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} />
+                    <BarChart 
+                      data={categoryData} 
+                      layout="vertical"
+                      margin={{ left: 20, right: 30, top: 0, bottom: 0 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#f1f5f9" className="dark:stroke-slate-800" />
+                      <XAxis 
+                        type="number" 
+                        axisLine={false} 
+                        tickLine={false} 
+                        tick={{fill: '#64748b', fontSize: 10}}
+                        tickFormatter={(value) => value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 })}
+                      />
+                      <YAxis 
+                        dataKey="name" 
+                        type="category" 
+                        axisLine={false} 
+                        tickLine={false} 
+                        tick={{fill: '#64748b', fontSize: 11}}
+                        width={100}
+                      />
                       <Tooltip 
+                        formatter={(value: number) => {
+                          const total = categoryData.reduce((acc, curr) => acc + curr.value, 0);
+                          const percent = ((value / total) * 100).toFixed(1);
+                          return [`${value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} (${percent}%)`, 'Valor'];
+                        }}
                         contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
                         cursor={{ fill: '#f8fafc', opacity: 0.1 }}
                       />
-                      <Bar dataKey="value" radius={[6, 6, 0, 0]}>
+                      <Bar dataKey="value" radius={[0, 6, 6, 0]} barSize={20}>
                         {categoryData.map((entry, index) => (
                           <Cell key={`cell-${index}`} fill={entry.color} />
                         ))}
@@ -2082,6 +2104,11 @@ function AppContent() {
                           ))}
                         </Pie>
                         <Tooltip 
+                          formatter={(value: number) => {
+                            const total = categoryData.reduce((acc, curr) => acc + curr.value, 0);
+                            const percent = ((value / total) * 100).toFixed(1);
+                            return [`${value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} (${percent}%)`, 'Valor'];
+                          }}
                           contentStyle={{ 
                             backgroundColor: '#1e293b', 
                             borderRadius: '12px', 
@@ -2100,15 +2127,28 @@ function AppContent() {
                   )}
                 </div>
                 <div className="mt-4 space-y-2">
-                  {categoryData.slice(0, 5).map((cat, i) => (
-                    <div key={i} className="flex justify-between items-center text-sm">
-                      <div className="flex items-center gap-2">
-                        <div className="w-3 h-3 rounded-full" style={{ backgroundColor: cat.color }} />
-                        <span className="text-slate-600 dark:text-slate-400">{cat.name}</span>
-                      </div>
-                      <span className="font-medium text-slate-900 dark:text-slate-100">{cat.value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
-                    </div>
-                  ))}
+                  {(() => {
+                    const total = categoryData.reduce((acc, curr) => acc + curr.value, 0);
+                    return categoryData.slice(0, 5).map((cat, i) => {
+                      const percent = total > 0 ? ((cat.value / total) * 100).toFixed(1) : '0';
+                      return (
+                        <div key={i} className="flex justify-between items-center text-sm">
+                          <div className="flex items-center gap-2">
+                            <div className="w-3 h-3 rounded-full" style={{ backgroundColor: cat.color }} />
+                            <span className="text-slate-600 dark:text-slate-400">{cat.name}</span>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 bg-slate-50 dark:bg-slate-800 px-1.5 py-0.5 rounded border border-slate-100 dark:border-slate-700">
+                              {percent}%
+                            </span>
+                            <span className="font-medium text-slate-900 dark:text-slate-100">
+                              {cat.value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    });
+                  })()}
                 </div>
               </div>
 
