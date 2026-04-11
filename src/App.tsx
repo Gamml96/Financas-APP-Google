@@ -119,7 +119,28 @@ import {
   Globe,
   Rocket,
   Train,
-  Bike
+  Bike,
+  Sparkles,
+  Brush,
+  Gem,
+  Shirt,
+  Crown,
+  Diamond,
+  Baby,
+  Milk,
+  ToyBrick,
+  CookingPot,
+  Cat,
+  Dog,
+  PawPrint,
+  Palmtree,
+  Ticket,
+  HeartHandshake,
+  PartyPopper,
+  Mic2,
+  Music2,
+  Droplets,
+  CloudRain
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -3072,7 +3093,30 @@ function CategoryIcon({ iconName, className }: { iconName: string, className?: s
     Globe,
     Rocket,
     Train,
-    Bike
+    Bike,
+    Sparkles,
+    Brush,
+    Gem,
+    Shirt,
+    Crown,
+    Diamond,
+    Baby,
+    Milk,
+    ToyBrick,
+    CookingPot,
+    Cat,
+    Dog,
+    PawPrint,
+    Palmtree,
+    Ticket,
+    HeartHandshake,
+    PartyPopper,
+    Mic2,
+    Music2,
+    Droplets,
+    CloudRain,
+    Sun,
+    Moon
   };
   
   const Icon = icons[iconName] || Tag;
@@ -4262,7 +4306,10 @@ function CategoryManager({ customCategories, allCategories, onAdd, onUpdate, onD
     'Dumbbell', 'Palette', 'Scissors', 'Wrench', 'Hammer', 'Truck', 'Package', 'Store', 
     'Pizza', 'Beer', 'Wine', 'IceCream', 'Apple', 'Leaf', 'Flower2', 'Cloud', 
     'Umbrella', 'Flame', 'Mountain', 'Waves', 'Smile', 'User', 'Users', 'Shield', 
-    'Lock', 'Key', 'Flag', 'MapPin', 'Globe', 'Rocket', 'Train', 'Bike', 'RefreshCcw', 'Wallet'
+    'Lock', 'Key', 'Flag', 'MapPin', 'Globe', 'Rocket', 'Train', 'Bike', 'RefreshCcw', 'Wallet',
+    'Sparkles', 'Brush', 'Gem', 'Shirt', 'Crown', 'Diamond', 'Baby', 'Milk', 'ToyBrick', 'CookingPot',
+    'Cat', 'Dog', 'PawPrint', 'Palmtree', 'Ticket', 'HeartHandshake', 'PartyPopper', 'Mic2', 'Music2',
+    'Droplets', 'CloudRain', 'Sun', 'Moon'
   ];
 
   const handleEdit = (cat: Category) => {
