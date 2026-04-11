@@ -933,6 +933,44 @@ function AppContent() {
     return `${diff > 0 ? '+' : ''}${diff.toFixed(1)}%`;
   }, [balance, previousBalance]);
 
+  const handleQuickFilter = (type: string) => {
+    const today = new Date();
+    let start: Date;
+    let end: Date = endOfDay(today);
+
+    switch (type) {
+      case 'today':
+        start = startOfDay(today);
+        break;
+      case 'yesterday':
+        start = startOfDay(subDays(today, 1));
+        end = endOfDay(subDays(today, 1));
+        break;
+      case 'last7':
+        start = startOfDay(subDays(today, 6));
+        break;
+      case 'last30':
+        start = startOfDay(subDays(today, 29));
+        break;
+      case 'thisMonth':
+        start = startOfMonth(today);
+        end = endOfMonth(today);
+        break;
+      case 'lastMonth':
+        const lastMonth = subMonths(today, 1);
+        start = startOfMonth(lastMonth);
+        end = endOfMonth(lastMonth);
+        break;
+      default:
+        return;
+    }
+
+    setDateRange({
+      start: format(start, 'yyyy-MM-dd'),
+      end: format(end, 'yyyy-MM-dd')
+    });
+  };
+
   const handleExportCSV = () => {
     if (displayTransactions.length === 0) return;
 
@@ -1687,8 +1725,19 @@ function AppContent() {
                     >
                       <ChevronLeft className="w-5 h-5" />
                     </button>
-                    <div className="px-4 font-bold min-w-[130px] text-center capitalize text-sm text-slate-700 dark:text-slate-200">
-                      {format(filterMonth, 'MMMM yyyy', { locale: ptBR })}
+                    <div className="px-4 font-bold min-w-[130px] text-center capitalize text-sm text-slate-700 dark:text-slate-200 flex flex-col items-center">
+                      <span>{format(filterMonth, 'MMMM yyyy', { locale: ptBR })}</span>
+                      {!isSameDay(startOfMonth(filterMonth), startOfMonth(new Date())) && (
+                        <button 
+                          onClick={() => {
+                            setFilterMonth(new Date());
+                            setDateRange(null);
+                          }}
+                          className="text-[9px] font-bold text-indigo-600 dark:text-indigo-400 uppercase hover:underline"
+                        >
+                          Ir para hoje
+                        </button>
+                      )}
                     </div>
                     <button 
                       onClick={() => {
@@ -1706,33 +1755,78 @@ function AppContent() {
 
                 {/* Secondary Filters Group */}
                 <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+                  {/* Quick Filter */}
+                  <div className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm min-w-[160px] h-11">
+                    <Calendar className="w-4 h-4 text-indigo-500 shrink-0" />
+                    <select 
+                      onChange={(e) => handleQuickFilter(e.target.value)}
+                      className="text-sm font-bold border-none bg-transparent focus:ring-0 p-0 w-full cursor-pointer text-slate-700 dark:text-slate-200"
+                      value=""
+                    >
+                      <option value="" disabled>Período Rápido</option>
+                      <option value="today">Hoje</option>
+                      <option value="yesterday">Ontem</option>
+                      <option value="last7">Últimos 7 dias</option>
+                      <option value="last30">Últimos 30 dias</option>
+                      <option value="thisMonth">Este Mês</option>
+                      <option value="lastMonth">Mês Passado</option>
+                    </select>
+                  </div>
+
                   {/* Date Range */}
                   <div className="flex items-center gap-3 px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm h-11">
                     <Filter className="w-4 h-4 text-slate-400 shrink-0" />
                     <div className="flex items-center gap-2 shrink-0">
-                      <input 
-                        type="date"
-                        value={dateRange?.start || ''}
-                        onChange={(e) => setDateRange({ start: e.target.value, end: dateRange?.end || '' })}
-                        className="text-xs font-bold border-none bg-transparent focus:ring-0 p-0 w-[105px] text-slate-600 dark:text-slate-300"
-                      />
-                      <span className="text-slate-300 dark:text-slate-600 font-bold">→</span>
-                      <input 
-                        type="date"
-                        value={dateRange?.end || ''}
-                        onChange={(e) => setDateRange({ start: dateRange?.start || '', end: e.target.value })}
-                        className="text-xs font-bold border-none bg-transparent focus:ring-0 p-0 w-[105px] text-slate-600 dark:text-slate-300"
-                      />
+                      <div className="flex flex-col">
+                        <span className="text-[8px] font-bold text-slate-400 uppercase leading-none mb-0.5">Início</span>
+                        <input 
+                          type="date"
+                          value={dateRange?.start || ''}
+                          onChange={(e) => setDateRange({ start: e.target.value, end: dateRange?.end || '' })}
+                          className="text-xs font-bold border-none bg-transparent focus:ring-0 p-0 w-[105px] text-slate-600 dark:text-slate-300"
+                        />
+                      </div>
+                      <span className="text-slate-300 dark:text-slate-600 font-bold mt-2">→</span>
+                      <div className="flex flex-col">
+                        <span className="text-[8px] font-bold text-slate-400 uppercase leading-none mb-0.5">Fim</span>
+                        <input 
+                          type="date"
+                          value={dateRange?.end || ''}
+                          onChange={(e) => setDateRange({ start: dateRange?.start || '', end: e.target.value })}
+                          className="text-xs font-bold border-none bg-transparent focus:ring-0 p-0 w-[105px] text-slate-600 dark:text-slate-300"
+                        />
+                      </div>
                     </div>
                     {dateRange && (
                       <button 
                         onClick={() => setDateRange(null)}
                         className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full text-slate-400 hover:text-rose-500 transition-colors"
+                        title="Limpar período customizado"
                       >
                         <X className="w-4 h-4" />
                       </button>
                     )}
                   </div>
+
+                  {/* Clear All Filters */}
+                  {(dateRange || typeFilter !== 'all' || categoryFilter !== 'all' || searchTerm || selectedAccountId !== 'all') && (
+                    <button
+                      onClick={() => {
+                        setDateRange(null);
+                        setTypeFilter('all');
+                        setCategoryFilter('all');
+                        setSearchTerm('');
+                        setSelectedAccountId('all');
+                        setPaymentTypeFilter('all');
+                        setFilterMonth(new Date());
+                      }}
+                      className="flex items-center justify-center gap-2 px-4 py-2 bg-rose-50 dark:bg-rose-900/20 text-rose-600 dark:text-rose-400 rounded-xl text-sm font-bold transition-all hover:bg-rose-100 dark:hover:bg-rose-900/40 h-11"
+                      title="Limpar todos os filtros"
+                    >
+                      <X className="w-4 h-4" />
+                      <span className="hidden sm:inline">Limpar</span>
+                    </button>
+                  )}
 
                   {/* Export Button */}
                   <button
@@ -1914,26 +2008,37 @@ function AppContent() {
                     )}
                   </div>
 
-                  {/* Category Filter */}
-                  <div className="h-10">
-                    <select
-                      value={categoryFilter}
-                      onChange={(e) => setCategoryFilter(e.target.value)}
-                      className="w-full h-full px-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-700 dark:text-slate-300 cursor-pointer"
-                    >
-                      <option value="all">Todas Categorias</option>
-                      {allCategories.filter(c => !c.parentId).map(cat => (
-                        <option key={cat.id} value={cat.name}>{cat.name}</option>
-                      ))}
-                    </select>
-                  </div>
+                  {/* Combined Filters: Category, Payment Type & Toggle */}
+                  <div className="md:col-span-2 flex items-center gap-2">
+                    <div className="flex-1 h-10">
+                      <select
+                        value={categoryFilter}
+                        onChange={(e) => setCategoryFilter(e.target.value)}
+                        className="w-full h-full px-2 sm:px-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-[10px] sm:text-xs outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-700 dark:text-slate-300 cursor-pointer"
+                      >
+                        <option value="all">Categorias</option>
+                        {allCategories.filter(c => !c.parentId).map(cat => (
+                          <option key={cat.id} value={cat.name}>{cat.name}</option>
+                        ))}
+                      </select>
+                    </div>
 
-                  {/* Payment Type Filter */}
-                  <div className="flex items-center gap-2">
+                    <div className="flex-1 h-10">
+                      <select
+                        value={paymentTypeFilter}
+                        onChange={(e) => setPaymentTypeFilter(e.target.value as any)}
+                        className="w-full h-full px-2 sm:px-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-[10px] sm:text-xs outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-700 dark:text-slate-300 cursor-pointer"
+                      >
+                        <option value="all">Pagamentos</option>
+                        <option value="debit">Débito</option>
+                        <option value="credit">Crédito</option>
+                      </select>
+                    </div>
+
                     <button
                       onClick={() => setListMode(prev => prev === 'detailed' ? 'compact' : 'detailed')}
                       className={cn(
-                        "p-2 rounded-xl border transition-all",
+                        "p-2.5 rounded-xl border transition-all shrink-0",
                         listMode === 'compact' 
                           ? "bg-indigo-50 dark:bg-indigo-900/30 border-indigo-200 dark:border-indigo-800 text-indigo-600 dark:text-indigo-400"
                           : "bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400"
@@ -1942,17 +2047,6 @@ function AppContent() {
                     >
                       {listMode === 'compact' ? <List className="w-4 h-4" /> : <Layers className="w-4 h-4" />}
                     </button>
-                    <div className="h-10">
-                      <select
-                        value={paymentTypeFilter}
-                        onChange={(e) => setPaymentTypeFilter(e.target.value as any)}
-                        className="w-full h-full px-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-700 dark:text-slate-300 cursor-pointer"
-                      >
-                        <option value="all">Todos Pagamentos</option>
-                        <option value="debit">Débito / Dinheiro</option>
-                        <option value="credit">Cartão de Crédito</option>
-                      </select>
-                    </div>
                   </div>
                 </div>
               </div>
