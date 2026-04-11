@@ -3026,13 +3026,14 @@ function CategoryIcon({ iconName, className }: { iconName: string, className?: s
 }
 
 // Transaction Item Component
-function TransactionItem({ tx, categories, accounts, onEdit, onDelete, isConsolidated }: { 
+function TransactionItem({ tx, categories, accounts, onEdit, onDelete, isConsolidated, onToggleExpand }: { 
   tx: Transaction, 
   categories: Category[], 
   accounts: Account[],
   onEdit: (tx: Transaction) => void, 
   onDelete: (id: string) => void,
-  isConsolidated?: boolean
+  isConsolidated?: boolean,
+  onToggleExpand?: () => void
 }) {
   const purchaseDate = tx.date instanceof Timestamp ? tx.date.toDate() : new Date(tx.date);
   const dueDate = tx.dueDate instanceof Timestamp ? tx.dueDate.toDate() : (tx.dueDate ? new Date(tx.dueDate) : null);
@@ -3044,7 +3045,11 @@ function TransactionItem({ tx, categories, accounts, onEdit, onDelete, isConsoli
       layout
       initial={{ opacity: 0, x: -10 }}
       animate={{ opacity: 1, x: 0 }}
-      className="group flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors border border-transparent hover:border-slate-100 dark:hover:border-slate-800 gap-3 sm:gap-4"
+      onDoubleClick={onToggleExpand}
+      className={cn(
+        "group flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors border border-transparent hover:border-slate-100 dark:hover:border-slate-800 gap-3 sm:gap-4",
+        isConsolidated && "cursor-pointer"
+      )}
     >
       <div className="flex items-center gap-3 sm:gap-4 min-w-0 flex-1">
         <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center text-white shadow-sm shrink-0" style={{ backgroundColor: cat.color }}>
@@ -3130,10 +3135,12 @@ function TransactionItem({ tx, categories, accounts, onEdit, onDelete, isConsoli
 }
 
 function TransactionList({ transactions, categories, accounts, onDelete, onEdit, listMode }: { transactions: Transaction[], categories: Category[], accounts: Account[], onDelete: (id: string) => void, onEdit: (tx: Transaction) => void, listMode: 'detailed' | 'compact' }) {
+  const [expandedConsolidated, setExpandedConsolidated] = useState<Set<string>>(new Set());
+
   const processedTransactions = useMemo(() => {
     if (listMode !== 'compact') return transactions;
 
-    const consolidated: Record<string, Transaction> = {};
+    const consolidated: Record<string, any> = {};
     const result: Transaction[] = [];
 
     transactions.forEach(tx => {
@@ -3149,17 +3156,29 @@ function TransactionList({ transactions, categories, accounts, onDelete, onEdit,
             description: `Fatura ${accounts.find(a => a.id === tx.accountId)?.name || 'Cartão'}`,
             amount: 0,
             category: 'Cartão',
-            type: 'expense'
+            type: 'expense',
+            isConsolidated: true,
+            originalTransactions: []
           };
         }
         consolidated[key].amount += Number(tx.amount) || 0;
+        consolidated[key].originalTransactions.push(tx);
       } else {
         result.push(tx);
       }
     });
 
-    return [...result, ...Object.values(consolidated)];
-  }, [transactions, listMode, accounts]);
+    const finalResult: Transaction[] = [];
+    [...result, ...Object.values(consolidated)].forEach(tx => {
+      if ((tx as any).isConsolidated && expandedConsolidated.has(tx.id)) {
+        finalResult.push(...(tx as any).originalTransactions);
+      } else {
+        finalResult.push(tx);
+      }
+    });
+
+    return finalResult;
+  }, [transactions, listMode, accounts, expandedConsolidated]);
 
   const groupedTransactions = useMemo(() => {
     const groups: Record<string, Transaction[]> = {};
@@ -3184,6 +3203,15 @@ function TransactionList({ transactions, categories, accounts, onDelete, onEdit,
 
     return Object.entries(groups).sort((a, b) => b[0].localeCompare(a[0]));
   }, [processedTransactions]);
+
+  const toggleExpand = (id: string) => {
+    setExpandedConsolidated(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
   if (transactions.length === 0) {
     return (
@@ -3246,7 +3274,8 @@ function TransactionList({ transactions, categories, accounts, onDelete, onEdit,
                   accounts={accounts}
                   onEdit={onEdit} 
                   onDelete={onDelete}
-                  isConsolidated={listMode === 'compact' && tx.id.includes('_')}
+                  isConsolidated={(tx as any).isConsolidated}
+                  onToggleExpand={() => (tx as any).isConsolidated && toggleExpand(tx.id)}
                 />
               ))}
             </div>
