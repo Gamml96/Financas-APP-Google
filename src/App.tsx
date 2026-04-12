@@ -1122,31 +1122,6 @@ function AppContent() {
     });
   }, [budgets, categoryData, filterMonth, allCategories]);
 
-  const dailySpending = useMemo(() => {
-    const today = new Date();
-    return transactions
-      .filter(tx => {
-        const txDate = tx.date instanceof Timestamp ? tx.date.toDate() : new Date(tx.date);
-        return tx.type === 'expense' && isSameDay(txDate, today);
-      })
-      .reduce((sum, tx) => sum + (Number(tx.amount) || 0), 0);
-  }, [transactions]);
-
-  const nextDueTransaction = useMemo(() => {
-    const today = startOfDay(new Date());
-    return transactions
-      .filter(tx => {
-        if (tx.isPaid) return false;
-        const txDate = tx.dueDate instanceof Timestamp ? tx.dueDate.toDate() : (tx.dueDate ? new Date(tx.dueDate) : (tx.date instanceof Timestamp ? tx.date.toDate() : new Date(tx.date)));
-        return isAfter(startOfDay(txDate), today) || isSameDay(startOfDay(txDate), today);
-      })
-      .sort((a, b) => {
-        const dateA = a.dueDate instanceof Timestamp ? a.dueDate.toDate() : (a.dueDate ? new Date(a.dueDate) : (a.date instanceof Timestamp ? a.date.toDate() : new Date(a.date)));
-        const dateB = b.dueDate instanceof Timestamp ? b.dueDate.toDate() : (b.dueDate ? new Date(b.dueDate) : (b.date instanceof Timestamp ? b.date.toDate() : new Date(b.date)));
-        return dateA.getTime() - dateB.getTime();
-      })[0];
-  }, [transactions]);
-
   const dailyBalanceData = useMemo(() => {
     const start = startOfMonth(filterMonth);
     const end = endOfMonth(filterMonth);
@@ -1932,43 +1907,6 @@ function AppContent() {
             trend={expenseTrend}
             formatValue={formatCurrency}
           />
-        </div>
-
-        {/* Summary Widgets Row */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-          {/* Today's Spending Widget */}
-          <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center gap-4">
-            <div className="bg-rose-100 dark:bg-rose-900/30 p-3 rounded-xl text-rose-600 dark:text-rose-400">
-              <TrendingDown className="w-6 h-6" />
-            </div>
-            <div>
-              <p className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Gasto de Hoje</p>
-              <p className="text-xl font-bold text-slate-900 dark:text-slate-100">{formatCurrency(dailySpending)}</p>
-            </div>
-            <div className="ml-auto text-right">
-              <p className="text-[10px] text-slate-400 dark:text-slate-500">Total acumulado hoje</p>
-            </div>
-          </div>
-
-          {/* Next Bill Widget */}
-          <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center gap-4">
-            <div className="bg-amber-100 dark:bg-amber-900/30 p-3 rounded-xl text-amber-600 dark:text-amber-400">
-              <Calendar className="w-6 h-6" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Próxima Conta</p>
-              {nextDueTransaction ? (
-                <>
-                  <p className="text-xl font-bold text-slate-900 dark:text-slate-100 truncate">{nextDueTransaction.description}</p>
-                  <p className="text-[10px] text-amber-600 dark:text-amber-400 font-bold">
-                    Vence em {format(nextDueTransaction.dueDate instanceof Timestamp ? nextDueTransaction.dueDate.toDate() : (nextDueTransaction.dueDate ? new Date(nextDueTransaction.dueDate) : (nextDueTransaction.date instanceof Timestamp ? nextDueTransaction.date.toDate() : new Date(nextDueTransaction.date))), 'dd/MM')} • {formatCurrency(nextDueTransaction.amount)}
-                  </p>
-                </>
-              ) : (
-                <p className="text-xl font-bold text-slate-400 dark:text-slate-600">Nenhuma pendente</p>
-              )}
-            </div>
-          </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
