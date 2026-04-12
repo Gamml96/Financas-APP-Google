@@ -49,6 +49,7 @@ import {
   Settings,
   CreditCard,
   Eye,
+  EyeOff,
   LayoutGrid,
   Layers,
   List,
@@ -462,6 +463,12 @@ function AppContent() {
   const [selectedAccountId, setSelectedAccountId] = useState<string>('all');
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [toast, setToast] = useState<{ message: string, type: 'success' | 'error' | 'info' } | null>(null);
+  const [isPrivateMode, setIsPrivateMode] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('isPrivateMode') === 'true';
+    }
+    return false;
+  });
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     if (typeof window !== 'undefined') {
       return (localStorage.getItem('theme') as 'light' | 'dark') || 'light';
@@ -482,6 +489,22 @@ function AppContent() {
 
   const toggleTheme = () => {
     setTheme(prev => prev === 'light' ? 'dark' : 'light');
+  };
+
+  const togglePrivateMode = () => {
+    setIsPrivateMode(prev => {
+      const newVal = !prev;
+      localStorage.setItem('isPrivateMode', String(newVal));
+      return newVal;
+    });
+  };
+
+  const formatCurrency = (value: number) => {
+    if (isPrivateMode) return 'R$ ••••';
+    return new Intl.NumberFormat('pt-BR', {
+      style: 'currency',
+      currency: 'BRL',
+    }).format(value);
   };
 
   const dailyTip = useMemo(() => {
@@ -1099,6 +1122,31 @@ function AppContent() {
     });
   }, [budgets, categoryData, filterMonth, allCategories]);
 
+  const dailySpending = useMemo(() => {
+    const today = new Date();
+    return transactions
+      .filter(tx => {
+        const txDate = tx.date instanceof Timestamp ? tx.date.toDate() : new Date(tx.date);
+        return tx.type === 'expense' && isSameDay(txDate, today);
+      })
+      .reduce((sum, tx) => sum + (Number(tx.amount) || 0), 0);
+  }, [transactions]);
+
+  const nextDueTransaction = useMemo(() => {
+    const today = startOfDay(new Date());
+    return transactions
+      .filter(tx => {
+        if (tx.isPaid) return false;
+        const txDate = tx.dueDate instanceof Timestamp ? tx.dueDate.toDate() : (tx.dueDate ? new Date(tx.dueDate) : (tx.date instanceof Timestamp ? tx.date.toDate() : new Date(tx.date)));
+        return isAfter(startOfDay(txDate), today) || isSameDay(startOfDay(txDate), today);
+      })
+      .sort((a, b) => {
+        const dateA = a.dueDate instanceof Timestamp ? a.dueDate.toDate() : (a.dueDate ? new Date(a.dueDate) : (a.date instanceof Timestamp ? a.date.toDate() : new Date(a.date)));
+        const dateB = b.dueDate instanceof Timestamp ? b.dueDate.toDate() : (b.dueDate ? new Date(b.dueDate) : (b.date instanceof Timestamp ? b.date.toDate() : new Date(b.date)));
+        return dateA.getTime() - dateB.getTime();
+      })[0];
+  }, [transactions]);
+
   const dailyBalanceData = useMemo(() => {
     const start = startOfMonth(filterMonth);
     const end = endOfMonth(filterMonth);
@@ -1595,6 +1643,14 @@ function AppContent() {
             
             <div className="flex items-center gap-2 sm:gap-4">
               <button 
+                onClick={togglePrivateMode}
+                className="p-2 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-all"
+                title={isPrivateMode ? "Mostrar valores" : "Ocultar valores"}
+              >
+                {isPrivateMode ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+              </button>
+
+              <button 
                 onClick={() => setShowAddModal(true)}
                 className="hidden md:flex items-center gap-2 text-slate-600 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-50/50 dark:hover:bg-indigo-900/20 px-4 py-2 rounded-xl transition-all font-semibold text-sm active:scale-95"
               >
@@ -1849,6 +1905,7 @@ function AppContent() {
             icon={<Wallet className="w-5 h-5 sm:w-6 sm:h-6" />} 
             color="indigo"
             alertOnNegative={true}
+            formatValue={formatCurrency}
           />
           <SummaryCard 
             title="Saldo do Mês" 
@@ -1857,6 +1914,7 @@ function AppContent() {
             color="indigo"
             trend={balanceTrend}
             alertOnNegative={true}
+            formatValue={formatCurrency}
           />
           <SummaryCard 
             title="Receita Mensal" 
@@ -1864,6 +1922,7 @@ function AppContent() {
             icon={<ArrowUpRight className="w-5 h-5 sm:w-6 sm:h-6" />} 
             color="emerald"
             trend={incomeTrend}
+            formatValue={formatCurrency}
           />
           <SummaryCard 
             title="Despesas Mensais" 
@@ -1871,7 +1930,45 @@ function AppContent() {
             icon={<ArrowDownRight className="w-5 h-5 sm:w-6 sm:h-6" />} 
             color="rose"
             trend={expenseTrend}
+            formatValue={formatCurrency}
           />
+        </div>
+
+        {/* Summary Widgets Row */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+          {/* Today's Spending Widget */}
+          <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center gap-4">
+            <div className="bg-rose-100 dark:bg-rose-900/30 p-3 rounded-xl text-rose-600 dark:text-rose-400">
+              <TrendingDown className="w-6 h-6" />
+            </div>
+            <div>
+              <p className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Gasto de Hoje</p>
+              <p className="text-xl font-bold text-slate-900 dark:text-slate-100">{formatCurrency(dailySpending)}</p>
+            </div>
+            <div className="ml-auto text-right">
+              <p className="text-[10px] text-slate-400 dark:text-slate-500">Total acumulado hoje</p>
+            </div>
+          </div>
+
+          {/* Next Bill Widget */}
+          <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center gap-4">
+            <div className="bg-amber-100 dark:bg-amber-900/30 p-3 rounded-xl text-amber-600 dark:text-amber-400">
+              <Calendar className="w-6 h-6" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Próxima Conta</p>
+              {nextDueTransaction ? (
+                <>
+                  <p className="text-xl font-bold text-slate-900 dark:text-slate-100 truncate">{nextDueTransaction.description}</p>
+                  <p className="text-[10px] text-amber-600 dark:text-amber-400 font-bold">
+                    Vence em {format(nextDueTransaction.dueDate instanceof Timestamp ? nextDueTransaction.dueDate.toDate() : (nextDueTransaction.dueDate ? new Date(nextDueTransaction.dueDate) : (nextDueTransaction.date instanceof Timestamp ? nextDueTransaction.date.toDate() : new Date(nextDueTransaction.date))), 'dd/MM')} • {formatCurrency(nextDueTransaction.amount)}
+                  </p>
+                </>
+              ) : (
+                <p className="text-xl font-bold text-slate-400 dark:text-slate-600">Nenhuma pendente</p>
+              )}
+            </div>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -1916,7 +2013,7 @@ function AppContent() {
                         color: theme === 'dark' ? '#f8fafc' : '#1e293b'
                       }}
                       itemStyle={{ color: theme === 'dark' ? '#f8fafc' : '#1e293b' }}
-                      formatter={(value: number) => [value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }), 'Saldo']}
+                      formatter={(value: number) => [formatCurrency(value), 'Saldo']}
                     />
                     <Area 
                       type="monotone" 
@@ -1931,7 +2028,7 @@ function AppContent() {
               </div>
             </div>
 
-            <div className="bg-white dark:bg-slate-900 p-4 sm:p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+            <div id="extrato-section" className="bg-white dark:bg-slate-900 p-4 sm:p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
               <div className="flex flex-col gap-6 mb-6">
                 {/* Top Row: Title and Main Actions */}
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
@@ -2058,6 +2155,7 @@ function AppContent() {
                 onDelete={handleDeleteTransaction} 
                 onEdit={setEditingTransaction}
                 listMode={listMode}
+                formatValue={formatCurrency}
               />
             </div>
           </div>
@@ -2164,7 +2262,7 @@ function AppContent() {
                         axisLine={false} 
                         tickLine={false} 
                         tick={{fill: '#64748b', fontSize: 10}}
-                        tickFormatter={(value) => value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 })}
+                        tickFormatter={(value) => formatCurrency(value)}
                       />
                       <YAxis 
                         dataKey="name" 
@@ -2178,12 +2276,24 @@ function AppContent() {
                         formatter={(value: number) => {
                           const total = categoryData.reduce((acc, curr) => acc + curr.value, 0);
                           const percent = ((value / total) * 100).toFixed(1);
-                          return [`${value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} (${percent}%)`, 'Valor'];
+                          return [`${formatCurrency(value)} (${percent}%)`, 'Valor'];
                         }}
                         contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
                         cursor={{ fill: '#f8fafc', opacity: 0.1 }}
                       />
-                      <Bar dataKey="value" radius={[0, 6, 6, 0]} barSize={20}>
+                      <Bar 
+                        dataKey="value" 
+                        radius={[0, 6, 6, 0]} 
+                        barSize={20} 
+                        className="cursor-pointer outline-none"
+                        onClick={(data) => {
+                          if (data && data.name) {
+                            setCategoryFilter(data.name);
+                            const extratoSection = document.getElementById('extrato-section');
+                            if (extratoSection) extratoSection.scrollIntoView({ behavior: 'smooth' });
+                          }
+                        }}
+                      >
                         {categoryData.map((entry, index) => (
                           <Cell key={`cell-${index}`} fill={entry.color} />
                         ))}
@@ -2213,16 +2323,23 @@ function AppContent() {
                           outerRadius={80}
                           paddingAngle={5}
                           dataKey="value"
+                          onClick={(data) => {
+                            if (data && data.name) {
+                              setCategoryFilter(data.name);
+                              const extratoSection = document.getElementById('extrato-section');
+                              if (extratoSection) extratoSection.scrollIntoView({ behavior: 'smooth' });
+                            }
+                          }}
                         >
                           {categoryData.map((entry, index) => (
-                            <Cell key={`cell-${index}`} fill={entry.color} />
+                            <Cell key={`cell-${index}`} fill={entry.color} className="cursor-pointer outline-none" />
                           ))}
                         </Pie>
                         <Tooltip 
                           formatter={(value: number) => {
                             const total = categoryData.reduce((acc, curr) => acc + curr.value, 0);
                             const percent = ((value / total) * 100).toFixed(1);
-                            return [`${value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} (${percent}%)`, 'Valor'];
+                            return [`${formatCurrency(value)} (${percent}%)`, 'Valor'];
                           }}
                           contentStyle={{ 
                             backgroundColor: '#1e293b', 
@@ -2332,6 +2449,7 @@ function AppContent() {
         onEdit={setEditingTransaction} 
         onDelete={handleDeleteTransaction}
         categories={allCategories}
+        formatValue={formatCurrency}
       />
     )}
   </main>
@@ -3059,7 +3177,7 @@ function AllowedUsersManager() {
   );
 }
 
-function SummaryCard({ title, amount, icon, color, trend, alertOnNegative = false }: { title: string, amount: number, icon: React.ReactNode, color: 'indigo' | 'emerald' | 'rose', trend?: string, alertOnNegative?: boolean }) {
+function SummaryCard({ title, amount, icon, color, trend, alertOnNegative = false, formatValue }: { title: string, amount: number, icon: React.ReactNode, color: 'indigo' | 'emerald' | 'rose', trend?: string, alertOnNegative?: boolean, formatValue?: (v: number) => string }) {
   const colors = {
     indigo: 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400',
     emerald: 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400',
@@ -3118,7 +3236,7 @@ function SummaryCard({ title, amount, icon, color, trend, alertOnNegative = fals
           "text-base sm:text-2xl font-bold tracking-tight truncate",
           isNegative && alertOnNegative ? "text-rose-700 dark:text-rose-400" : "text-slate-900 dark:text-slate-100"
         )}>
-          {(Number(amount) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+          {formatValue ? formatValue(amount) : (Number(amount) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
         </p>
       </div>
     </div>
@@ -3218,14 +3336,15 @@ function CategoryIcon({ iconName, className }: { iconName: string, className?: s
 }
 
 // Transaction Item Component
-function TransactionItem({ tx, categories, accounts, onEdit, onDelete, isConsolidated, onToggleExpand }: { 
+function TransactionItem({ tx, categories, accounts, onEdit, onDelete, isConsolidated, onToggleExpand, formatValue }: { 
   tx: Transaction, 
   categories: Category[], 
   accounts: Account[],
   onEdit: (tx: Transaction) => void, 
   onDelete: (id: string) => void,
   isConsolidated?: boolean,
-  onToggleExpand?: () => void
+  onToggleExpand?: () => void,
+  formatValue: (v: number) => string
 }) {
   const purchaseDate = tx.date instanceof Timestamp ? tx.date.toDate() : new Date(tx.date);
   const dueDate = tx.dueDate instanceof Timestamp ? tx.dueDate.toDate() : (tx.dueDate ? new Date(tx.dueDate) : null);
@@ -3300,7 +3419,7 @@ function TransactionItem({ tx, categories, accounts, onEdit, onDelete, isConsoli
           "font-bold text-lg sm:text-lg",
           tx.type === 'income' ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"
         )}>
-          {tx.type === 'income' ? '+' : '-'}{tx.amount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+          {tx.type === 'income' ? '+' : '-'}{formatValue(tx.amount)}
         </span>
         
         {!isConsolidated && (
@@ -3326,7 +3445,7 @@ function TransactionItem({ tx, categories, accounts, onEdit, onDelete, isConsoli
   );
 }
 
-function TransactionList({ transactions, categories, accounts, onDelete, onEdit, listMode }: { transactions: Transaction[], categories: Category[], accounts: Account[], onDelete: (id: string) => void, onEdit: (tx: Transaction) => void, listMode: 'detailed' | 'compact' }) {
+function TransactionList({ transactions, categories, accounts, onDelete, onEdit, listMode, formatValue }: { transactions: Transaction[], categories: Category[], accounts: Account[], onDelete: (id: string) => void, onEdit: (tx: Transaction) => void, listMode: 'detailed' | 'compact', formatValue: (v: number) => string }) {
   const [expandedConsolidated, setExpandedConsolidated] = useState<Set<string>>(new Set());
 
   const processedTransactions = useMemo(() => {
@@ -3439,12 +3558,12 @@ function TransactionList({ transactions, categories, accounts, onDelete, onEdit,
               <div className="flex items-center gap-2 sm:gap-4 text-[10px] font-bold">
                 {dayIncome > 0 && (
                   <span className="text-emerald-600 dark:text-emerald-400 hidden sm:inline">
-                    +{dayIncome.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                    +{formatValue(dayIncome)}
                   </span>
                 )}
                 {dayExpense > 0 && (
                   <span className="text-rose-600 dark:text-rose-400 hidden sm:inline">
-                    -{dayExpense.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                    -{formatValue(dayExpense)}
                   </span>
                 )}
                 <span className={cn(
@@ -3453,7 +3572,7 @@ function TransactionList({ transactions, categories, accounts, onDelete, onEdit,
                     ? "bg-emerald-50 dark:bg-emerald-900/20 border-emerald-100 dark:border-emerald-800 text-emerald-700 dark:text-emerald-400"
                     : "bg-rose-50 dark:bg-rose-900/20 border-rose-100 dark:border-rose-800 text-rose-700 dark:text-rose-400"
                 )}>
-                  {dayBalance.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                  {formatValue(dayBalance)}
                 </span>
               </div>
             </div>
@@ -3468,6 +3587,7 @@ function TransactionList({ transactions, categories, accounts, onDelete, onEdit,
                   onDelete={onDelete}
                   isConsolidated={(tx as any).isConsolidated}
                   onToggleExpand={() => (tx as any).isConsolidated && toggleExpand(tx.id)}
+                  formatValue={formatValue}
                 />
               ))}
             </div>
@@ -3478,12 +3598,13 @@ function TransactionList({ transactions, categories, accounts, onDelete, onEdit,
   );
 }
 
-function InvoiceView({ transactions, accounts, onEdit, onDelete, categories }: { 
+function InvoiceView({ transactions, accounts, onEdit, onDelete, categories, formatValue }: { 
   transactions: Transaction[], 
   accounts: Account[], 
   onEdit: (tx: Transaction) => void, 
   onDelete: (id: string) => void,
-  categories: Category[]
+  categories: Category[],
+  formatValue: (v: number) => string
 }) {
   const creditAccounts = accounts.filter(acc => acc.type === 'credit' || acc.type === 'hybrid');
   const [selectedAccountId, setSelectedAccountId] = useState<string>(() => {
@@ -3609,7 +3730,7 @@ function InvoiceView({ transactions, accounts, onEdit, onDelete, categories }: {
               <div className="text-right">
                 <span className="text-xs text-slate-500 dark:text-slate-400 block uppercase tracking-wider font-semibold">Total da Fatura</span>
                 <span className="text-lg font-bold text-rose-600 dark:text-rose-400">
-                  {invoice.total.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                  {formatValue(invoice.total)}
                 </span>
               </div>
             </div>
@@ -3622,6 +3743,7 @@ function InvoiceView({ transactions, accounts, onEdit, onDelete, categories }: {
                   accounts={accounts}
                   onEdit={onEdit} 
                   onDelete={onDelete} 
+                  formatValue={formatValue}
                 />
               ))}
             </div>
