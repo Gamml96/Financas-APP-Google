@@ -48,6 +48,7 @@ import {
   X,
   Settings,
   CreditCard,
+  FileText,
   Eye,
   EyeOff,
   LayoutGrid,
@@ -84,6 +85,7 @@ import {
   GraduationCap,
   Stethoscope,
   Zap,
+  Calculator,
   Wifi,
   Smartphone,
   Laptop,
@@ -380,33 +382,38 @@ export default function App() {
   );
 }
 
-function BottomNav({ activeView, setActiveView, onAdd, onAccounts, onCategories, onSettings }: { 
+
+function BottomNav({ activeView, setActiveView, onAdd, onAccounts, onCategories, onSettings, onInvoices }: { 
   activeView: string, 
   setActiveView: (v: any) => void, 
   onAdd: () => void,
   onAccounts: () => void,
   onCategories: () => void,
-  onSettings: () => void
+  onSettings: () => void,
+  onInvoices: () => void
 }) {
   return (
     <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 px-1 py-3 z-40 flex justify-between items-center pb-[calc(1.5rem+var(--sab,0px))]">
       <button 
-        onClick={() => setActiveView('invoices')}
+        onClick={() => setActiveView('dashboard')}
+        className={cn(
+          "flex flex-col items-center gap-1 flex-1 transition-colors",
+          activeView === 'dashboard' ? "text-indigo-600" : "text-slate-400 dark:text-slate-500"
+        )}
+      >
+        <LayoutDashboard className="w-5 h-5" />
+        <span className="text-[9px] font-bold">Início</span>
+      </button>
+
+      <button 
+        onClick={onInvoices}
         className={cn(
           "flex flex-col items-center gap-1 flex-1 transition-colors",
           activeView === 'invoices' ? "text-indigo-600" : "text-slate-400 dark:text-slate-500"
         )}
       >
-        <CreditCard className="w-5 h-5" />
+        <FileText className="w-5 h-5" />
         <span className="text-[9px] font-bold">Faturas</span>
-      </button>
-
-      <button 
-        onClick={onCategories}
-        className="flex flex-col items-center gap-1 flex-1 text-slate-400 dark:text-slate-500 active:text-indigo-600 transition-colors"
-      >
-        <Tag className="w-5 h-5" />
-        <span className="text-[9px] font-bold">Categorias</span>
       </button>
 
       <div className="flex-1 flex justify-center">
@@ -2456,10 +2463,13 @@ function AppContent() {
         onAccounts={() => setShowAccountModal(true)}
         onCategories={() => setShowCategoryModal(true)}
         onSettings={() => setShowSettingsModal(true)}
+        onInvoices={() => setActiveView('invoices')}
       />
 
       {/* Modals */}
       <AnimatePresence>
+
+
         {showBudgetModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <motion.div 
@@ -2569,6 +2579,7 @@ function AppContent() {
                   categories={allCategories}
                   accounts={accounts}
                   transactions={transactions}
+                  formatCurrency={formatCurrency}
                 />
               </div>
             </motion.div>
@@ -2608,6 +2619,7 @@ function AppContent() {
                   accounts={accounts}
                   initialData={editingTransaction}
                   transactions={transactions}
+                  formatCurrency={formatCurrency}
                 />
               </div>
             </motion.div>
@@ -3771,7 +3783,7 @@ function InvoiceView({ transactions, accounts, onEdit, onDelete, categories, for
   );
 }
 
-function TransactionForm({ onSubmit, onCancel, categories: allCategories, accounts, initialData, transactions }: { onSubmit: (data: any) => Promise<void>, onCancel: () => void, categories: Category[], accounts: Account[], initialData?: Transaction, transactions: Transaction[] }) {
+function TransactionForm({ onSubmit, onCancel, categories: allCategories, accounts, initialData, transactions, formatCurrency }: { onSubmit: (data: any) => Promise<void>, onCancel: () => void, categories: Category[], accounts: Account[], initialData?: Transaction, transactions: Transaction[], formatCurrency: (val: number) => string }) {
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [updateFuture, setUpdateFuture] = useState(false);
@@ -3897,6 +3909,86 @@ function TransactionForm({ onSubmit, onCancel, categories: allCategories, accoun
       }
     }
   }, [formData.date, formData.accountId, formData.paymentType, selectedAccount?.closingDay, selectedAccount?.dueDay]);
+
+  const projectionData = useMemo(() => {
+    const amount = parseFloat(formData.amount.replace(',', '.'));
+    if (isNaN(amount) || amount <= 0 || formData.type !== 'expense') return null;
+
+    const simDate = parseISO(formData.date);
+    const numInstallments = parseInt(formData.installments) || 1;
+    
+    // Projetar para os próximos 4 meses
+    const start = startOfMonth(new Date());
+    const end = endOfMonth(addMonths(new Date(), 4));
+    const days = eachDayOfInterval({ start, end });
+
+    let firstNegative: { date: string, balance: number } | null = null;
+
+    for (const day of days) {
+      let totalBalance = 0;
+
+      accounts.forEach(acc => {
+        let initialDate: Date;
+        if (acc.initialBalanceDate instanceof Timestamp) {
+          initialDate = acc.initialBalanceDate.toDate();
+        } else if (acc.initialBalanceDate) {
+          initialDate = new Date(acc.initialBalanceDate);
+        } else {
+          initialDate = new Date(0);
+        }
+        
+        if (isBefore(day, startOfDay(initialDate)) && !isSameDay(day, initialDate)) {
+          return;
+        }
+
+        let currentAccBalance = Number(acc.initialBalance) || 0;
+
+        // Transações reais (excluindo a que estamos editando se for o caso)
+        transactions
+          .filter(tx => tx.accountId === acc.id && tx.id !== initialData?.id)
+          .forEach(tx => {
+            let txDate = tx.date instanceof Timestamp ? tx.date.toDate() : new Date(tx.date);
+            if (tx.paymentType === 'credit' && tx.dueDate) {
+              txDate = tx.dueDate instanceof Timestamp ? tx.dueDate.toDate() : new Date(tx.dueDate);
+            }
+            if (isAfter(startOfDay(txDate), startOfDay(initialDate)) || isSameDay(txDate, initialDate)) {
+              if (isBefore(startOfDay(txDate), startOfDay(day)) || isSameDay(txDate, day)) {
+                if (tx.type === 'income') currentAccBalance += Number(tx.amount);
+                else currentAccBalance -= Number(tx.amount);
+              }
+            }
+          });
+
+        // Transação atual sendo preenchida
+        if (acc.id === formData.accountId) {
+          for (let i = 0; i < numInstallments; i++) {
+            let simTxDate = simDate;
+            if (formData.paymentType === 'credit' && selectedAccount?.closingDay && selectedAccount?.dueDay) {
+              const purchaseDate = addMonths(simDate, i);
+              simTxDate = calculateDueDate(purchaseDate, selectedAccount.closingDay, selectedAccount.dueDay);
+            } else {
+              simTxDate = addMonths(simDate, i);
+            }
+
+            if (isBefore(startOfDay(simTxDate), startOfDay(day)) || isSameDay(simTxDate, day)) {
+              const instAmount = amount / numInstallments;
+              if (formData.type === 'income') currentAccBalance += instAmount;
+              else currentAccBalance -= instAmount;
+            }
+          }
+        }
+
+        totalBalance += currentAccBalance;
+      });
+
+      if (totalBalance < 0 && !firstNegative) {
+        firstNegative = { date: format(day, 'dd/MM'), balance: totalBalance };
+        break; // Já encontramos o primeiro dia negativo, podemos parar
+      }
+    }
+
+    return firstNegative;
+  }, [formData.amount, formData.date, formData.type, formData.accountId, formData.installments, formData.paymentType, accounts, transactions, initialData, selectedAccount]);
 
   if (accounts.length === 0) {
     return (
@@ -4416,6 +4508,22 @@ function TransactionForm({ onSubmit, onCancel, categories: allCategories, accoun
           )}
         </div>
       </div>
+
+      {projectionData && (
+        <motion.div 
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-800 rounded-xl flex items-start gap-3 mb-4"
+        >
+          <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-bold text-amber-800 dark:text-amber-400">Alerta de Fluxo de Caixa</p>
+            <p className="text-xs text-amber-700 dark:text-amber-500 mt-1">
+              Esta despesa fará seu saldo ficar negativo em <span className="font-bold">{projectionData.date}</span> (Projeção: {formatCurrency(projectionData.balance)}).
+            </p>
+          </div>
+        </motion.div>
+      )}
 
       <div className="flex gap-3 pt-4">
         <button
