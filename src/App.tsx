@@ -56,6 +56,7 @@ import {
   DollarSign,
   ArrowUpRight,
   ArrowDownRight,
+  ArrowRightLeft,
   Bell,
   BellOff,
   RefreshCcw,
@@ -246,6 +247,11 @@ function calculateDueDate(purchaseDate: Date, closingDay: number, dueDay: number
 }
 
 // Types
+interface TransactionSplit {
+  category: string;
+  amount: number;
+}
+
 interface Transaction {
   id: string;
   userId: string;
@@ -264,6 +270,7 @@ interface Transaction {
   groupId?: string;
   isPaid?: boolean;
   createdAt: any;
+  splits?: TransactionSplit[];
 }
 
 interface Account {
@@ -1078,28 +1085,37 @@ function AppContent() {
     analysisTransactions
       .filter(t => t.type === 'expense' && t.category !== 'Transferência')
       .forEach(tx => {
-        let categoryName = tx.category;
-        let categoryColor = '#64748b';
+        const processCategory = (catName: string, amount: number) => {
+          let categoryName = catName;
+          let categoryColor = '#64748b';
 
-        const cat = allCategories.find(c => c.name === tx.category);
-        
-        if (analysisLevel === 'category' && cat?.parentId) {
-          const parent = allCategories.find(p => p.id === cat.parentId);
-          if (parent) {
-            categoryName = parent.name;
-            categoryColor = parent.color;
-          } else {
+          const cat = allCategories.find(c => c.name === catName);
+          
+          if (analysisLevel === 'category' && cat?.parentId) {
+            const parent = allCategories.find(p => p.id === cat.parentId);
+            if (parent) {
+              categoryName = parent.name;
+              categoryColor = parent.color;
+            } else {
+              categoryColor = cat.color;
+            }
+          } else if (cat) {
             categoryColor = cat.color;
           }
-        } else if (cat) {
-          categoryColor = cat.color;
-        }
 
-        if (!data[categoryName]) {
-          data[categoryName] = { name: categoryName, value: 0, color: categoryColor };
+          if (!data[categoryName]) {
+            data[categoryName] = { name: categoryName, value: 0, color: categoryColor };
+          }
+          data[categoryName].value += amount;
+        };
+
+        if (tx.splits && tx.splits.length > 0) {
+          tx.splits.forEach(split => {
+            processCategory(split.category, Number(split.amount) || 0);
+          });
+        } else {
+          processCategory(tx.category, Number(tx.amount) || 0);
         }
-        const amount = Number(tx.amount) || 0;
-        data[categoryName].value += amount;
       });
     return Object.values(data).sort((a, b) => b.value - a.value);
   }, [analysisTransactions, allCategories, analysisLevel]);
@@ -1243,6 +1259,23 @@ function AppContent() {
           currentAmount = Math.round((installmentAmount + remainder) * 100) / 100;
         }
 
+        // Calculate proportional splits if they exist
+        let currentSplits = null;
+        if (data.splits && data.splits.length > 0) {
+          const totalAmount = data.amount;
+          currentSplits = data.splits.map((split: any) => ({
+            category: split.category,
+            amount: Math.round((currentAmount * (split.amount / totalAmount)) * 100) / 100
+          }));
+          
+          // Adjust last split for rounding errors
+          const splitsSum = currentSplits.reduce((sum: number, s: any) => sum + s.amount, 0);
+          const diff = Math.round((currentAmount - splitsSum) * 100) / 100;
+          if (diff !== 0 && currentSplits.length > 0) {
+            currentSplits[currentSplits.length - 1].amount = Math.round((currentSplits[currentSplits.length - 1].amount + diff) * 100) / 100;
+          }
+        }
+
         if (data.type === 'transfer') {
           const transferGroupId = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15);
           
@@ -1290,6 +1323,7 @@ function AppContent() {
             createdAt: Timestamp.now(),
             date: Timestamp.fromDate(currentDate),
             dueDate: Timestamp.fromDate(dueDate),
+            splits: currentSplits
           };
 
           if (numInstallments > 1) {
@@ -1465,6 +1499,25 @@ function AppContent() {
             }
           }
 
+          // Handle Splits
+          if (data.splits && data.splits.length > 0) {
+            const txAmount = updateData.amount || tx.amount;
+            const totalAmount = data.amount;
+            updateData.splits = data.splits.map((split: any) => ({
+              category: split.category,
+              amount: Math.round((txAmount * (split.amount / totalAmount)) * 100) / 100
+            }));
+            
+            // Adjust last split for rounding errors
+            const splitsSum = updateData.splits.reduce((sum: number, s: any) => sum + s.amount, 0);
+            const diff = Math.round((txAmount - splitsSum) * 100) / 100;
+            if (diff !== 0 && updateData.splits.length > 0) {
+              updateData.splits[updateData.splits.length - 1].amount = Math.round((updateData.splits[updateData.splits.length - 1].amount + diff) * 100) / 100;
+            }
+          } else if (editingTransaction.splits && (!data.splits || data.splits.length === 0)) {
+            updateData.splits = null;
+          }
+
           if (Object.keys(updateData).length > 0) {
             batch.update(doc(db, 'transactions', tx.id), updateData);
           }
@@ -1476,7 +1529,8 @@ function AppContent() {
         await updateDoc(doc(db, 'transactions', editingTransaction.id), {
           ...baseData,
           date: Timestamp.fromDate(purchaseDate),
-          dueDate: Timestamp.fromDate(dueDate)
+          dueDate: Timestamp.fromDate(dueDate),
+          splits: data.splits || null
         });
         setToast({ message: "Transação atualizada com sucesso!", type: 'success' });
       }
@@ -2514,6 +2568,7 @@ function AppContent() {
                   onCancel={() => setShowAddModal(false)} 
                   categories={allCategories}
                   accounts={accounts}
+                  transactions={transactions}
                 />
               </div>
             </motion.div>
@@ -2552,6 +2607,7 @@ function AppContent() {
                   categories={allCategories}
                   accounts={accounts}
                   initialData={editingTransaction}
+                  transactions={transactions}
                 />
               </div>
             </motion.div>
@@ -3320,6 +3376,11 @@ function TransactionItem({ tx, categories, accounts, onEdit, onDelete, isConsoli
                   <CreditCard className="w-3 h-3 text-slate-400" />
                 </div>
               )}
+              {tx.splits && tx.splits.length > 0 && (
+                <div className="bg-amber-50 dark:bg-amber-900/30 p-1 rounded" title="Dividido em várias categorias">
+                  <Layers className="w-3 h-3 text-amber-500" />
+                </div>
+              )}
               {tx.installment && (
                 <span className="text-[10px] bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 px-1.5 py-0.5 rounded font-medium">
                   {tx.installment}/{tx.totalInstallments}
@@ -3336,7 +3397,9 @@ function TransactionItem({ tx, categories, accounts, onEdit, onDelete, isConsoli
             <span className="text-slate-300 dark:text-slate-700 hidden sm:inline">•</span>
             <div className="flex items-center gap-1">
               <Tag className="w-2.5 h-2.5 text-slate-400" />
-              <span className="truncate max-w-[80px] sm:max-w-none">{tx.category}</span>
+              <span className="truncate max-w-[80px] sm:max-w-none">
+                {tx.splits && tx.splits.length > 0 ? 'Múltiplas' : tx.category}
+              </span>
             </div>
             <span className="text-slate-300 dark:text-slate-700 hidden sm:inline">•</span>
             <div className="flex items-center gap-1 shrink-0">
@@ -3349,6 +3412,16 @@ function TransactionItem({ tx, categories, accounts, onEdit, onDelete, isConsoli
               )}
             </div>
           </div>
+          
+          {tx.splits && tx.splits.length > 0 && (
+            <div className="mt-2 flex flex-wrap gap-2">
+              {tx.splits.map((split, i) => (
+                <span key={i} className="text-[9px] bg-slate-50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400 px-1.5 py-0.5 rounded border border-slate-100 dark:border-slate-800">
+                  {split.category}: {formatValue(split.amount)}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
@@ -3698,10 +3771,11 @@ function InvoiceView({ transactions, accounts, onEdit, onDelete, categories, for
   );
 }
 
-function TransactionForm({ onSubmit, onCancel, categories: allCategories, accounts, initialData }: { onSubmit: (data: any) => Promise<void>, onCancel: () => void, categories: Category[], accounts: Account[], initialData?: Transaction }) {
+function TransactionForm({ onSubmit, onCancel, categories: allCategories, accounts, initialData, transactions }: { onSubmit: (data: any) => Promise<void>, onCancel: () => void, categories: Category[], accounts: Account[], initialData?: Transaction, transactions: Transaction[] }) {
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [updateFuture, setUpdateFuture] = useState(false);
+  const [isAutoCategorizing, setIsAutoCategorizing] = useState(false);
   const [formData, setFormData] = useState({
     amount: initialData ? initialData.amount.toString() : '',
     type: initialData ? initialData.type : 'expense' as 'income' | 'expense' | 'transfer',
@@ -3723,8 +3797,43 @@ function TransactionForm({ onSubmit, onCancel, categories: allCategories, accoun
       if (!initialData?.dueDate) return '';
       const d = initialData.dueDate instanceof Timestamp ? initialData.dueDate.toDate() : new Date(initialData.dueDate);
       return isNaN(d.getTime()) ? '' : format(d, 'yyyy-MM-dd');
-    })()
+    })(),
+    isSplit: initialData?.splits && initialData.splits.length > 0 ? true : false,
+    splits: initialData?.splits ? initialData.splits.map(s => ({ category: s.category, amount: s.amount.toString() })) : [{ category: '', amount: '' }]
   });
+
+  // Intelligent Categorization logic
+  useEffect(() => {
+    if (initialData || formData.isSplit || !formData.description || formData.description.length < 3) return;
+
+    const timer = setTimeout(() => {
+      const desc = formData.description.toLowerCase().trim();
+      
+      // Find transactions with similar descriptions
+      const matches = transactions.filter(t => 
+        t.description && t.description.toLowerCase().includes(desc) && t.category
+      );
+
+      if (matches.length > 0) {
+        // Count frequency of categories for this description
+        const frequency: Record<string, number> = {};
+        matches.forEach(m => {
+          frequency[m.category] = (frequency[m.category] || 0) + 1;
+        });
+
+        // Get the most frequent category
+        const suggestedCategory = Object.entries(frequency).sort((a, b) => b[1] - a[1])[0][0];
+        
+        if (suggestedCategory && suggestedCategory !== formData.category) {
+          setIsAutoCategorizing(true);
+          setFormData(prev => ({ ...prev, category: suggestedCategory }));
+          setTimeout(() => setIsAutoCategorizing(false), 2000);
+        }
+      }
+    }, 800); // Debounce
+
+    return () => clearTimeout(timer);
+  }, [formData.description, transactions, initialData, formData.isSplit]);
 
   const categories = useMemo(() => {
     return allCategories
@@ -3816,8 +3925,31 @@ function TransactionForm({ onSubmit, onCancel, categories: allCategories, accoun
         setError("Por favor, insira um valor válido maior que zero.");
         return;
       }
+
+      let finalSplits = [];
+      if (formData.isSplit) {
+        let splitTotal = 0;
+        for (const split of formData.splits) {
+          const splitAmount = parseFloat(split.amount.replace(',', '.'));
+          if (isNaN(splitAmount) || splitAmount <= 0) {
+            setError("Todos os valores da divisão devem ser válidos e maiores que zero.");
+            return;
+          }
+          if (!split.category) {
+            setError("Todas as divisões devem ter uma categoria selecionada.");
+            return;
+          }
+          splitTotal += splitAmount;
+          finalSplits.push({ category: split.category, amount: splitAmount });
+        }
+
+        if (Math.abs(splitTotal - amount) > 0.01) {
+          setError(`A soma das divisões (${splitTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}) deve ser igual ao valor total (${amount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}).`);
+          return;
+        }
+      }
       
-      if (!formData.category) {
+      if (!formData.isSplit && !formData.category) {
         setError("Por favor, selecione uma categoria.");
         return;
       }
@@ -3837,6 +3969,7 @@ function TransactionForm({ onSubmit, onCancel, categories: allCategories, accoun
         await onSubmit({
           ...formData,
           amount,
+          splits: formData.isSplit ? finalSplits : null,
           updateFuture
         });
       } catch (err: any) {
@@ -3884,120 +4017,290 @@ function TransactionForm({ onSubmit, onCancel, categories: allCategories, accoun
         </button>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div>
-          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-            {formData.type === 'transfer' ? 'Conta de Origem' : 'Conta'}
-          </label>
-          <select
-            value={formData.accountId}
-            onChange={(e) => setFormData({ ...formData, accountId: e.target.value })}
-            className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 outline-none text-slate-900 dark:text-slate-100"
-          >
-            {accounts.map(a => (
-              <option key={a.id} value={a.id} className="dark:bg-slate-900">{a.name}</option>
-            ))}
-          </select>
-        </div>
-        {formData.type === 'transfer' ? (
+      <div className="grid grid-cols-1 gap-5">
+        {/* Conta e Tipo de Pagamento */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Conta de Destino</label>
+            <label className="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+              <Wallet className="w-4 h-4 text-slate-400" />
+              {formData.type === 'transfer' ? 'Origem' : 'Conta'}
+            </label>
             <select
-              required
-              value={formData.toAccountId}
-              onChange={(e) => setFormData({ ...formData, toAccountId: e.target.value })}
-              className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 outline-none text-slate-900 dark:text-slate-100"
+              value={formData.accountId}
+              onChange={(e) => setFormData({ ...formData, accountId: e.target.value })}
+              className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 outline-none text-slate-900 dark:text-slate-100 transition-all"
             >
-              <option value="" className="dark:bg-slate-900">Selecione a conta</option>
-              {accounts.filter(a => a.id !== formData.accountId).map(a => (
+              {accounts.map(a => (
                 <option key={a.id} value={a.id} className="dark:bg-slate-900">{a.name}</option>
               ))}
             </select>
           </div>
-        ) : (
+          {formData.type === 'transfer' ? (
+            <div>
+              <label className="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+                <ArrowRightLeft className="w-4 h-4 text-slate-400" />
+                Destino
+              </label>
+              <select
+                required
+                value={formData.toAccountId}
+                onChange={(e) => setFormData({ ...formData, toAccountId: e.target.value })}
+                className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 outline-none text-slate-900 dark:text-slate-100 transition-all"
+              >
+                <option value="" className="dark:bg-slate-900">Selecione a conta</option>
+                {accounts.filter(a => a.id !== formData.accountId).map(a => (
+                  <option key={a.id} value={a.id} className="dark:bg-slate-900">{a.name}</option>
+                ))}
+              </select>
+            </div>
+          ) : (
+            <div>
+              <label className="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+                <CreditCard className="w-4 h-4 text-slate-400" />
+                Pagamento
+              </label>
+              <select
+                value={formData.paymentType}
+                onChange={(e) => setFormData({ ...formData, paymentType: e.target.value as any })}
+                className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 outline-none text-slate-900 dark:text-slate-100 transition-all"
+              >
+                {selectedAccount?.type !== 'credit' && <option value="debit" className="dark:bg-slate-900">Débito / Dinheiro</option>}
+                {(selectedAccount?.type === 'credit' || selectedAccount?.type === 'hybrid') && <option value="credit" className="dark:bg-slate-900">Cartão de Crédito</option>}
+              </select>
+            </div>
+          )}
+        </div>
+
+        {/* Descrição */}
+        <div>
+          <label className="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+            <Edit className="w-4 h-4 text-slate-400" />
+            Descrição
+          </label>
+          <div className="relative">
+            <input
+              type="text"
+              value={formData.description}
+              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+              className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 outline-none text-slate-900 dark:text-slate-100 transition-all"
+              placeholder="Ex: Aluguel, Supermercado, Salário..."
+            />
+            <AnimatePresence>
+              {isAutoCategorizing && (
+                <motion.div 
+                  initial={{ opacity: 0, y: 5 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0 }}
+                  className="absolute -top-6 right-0 text-[10px] font-bold text-indigo-600 dark:text-indigo-400 flex items-center gap-1"
+                >
+                  <Sparkles className="w-3 h-3" />
+                  Categoria sugerida!
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        </div>
+
+        {/* Seletor de Dividir Transação */}
+        {formData.type === 'expense' && (
+          <div className="p-4 bg-slate-50/50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-slate-800 transition-all hover:border-indigo-100 dark:hover:border-indigo-900/30">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className={cn(
+                  "p-2 rounded-lg transition-colors",
+                  formData.isSplit ? "bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400" : "bg-slate-100 dark:bg-slate-800 text-slate-400"
+                )}>
+                  <Layers className="w-4 h-4" />
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">Dividir Transação</span>
+                  <span className="text-[10px] text-slate-500 dark:text-slate-400">Alocar em múltiplas categorias</span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setFormData({ ...formData, isSplit: !formData.isSplit })}
+                className={cn(
+                  "w-10 h-5 rounded-full transition-all relative",
+                  formData.isSplit ? "bg-indigo-600" : "bg-slate-300 dark:bg-slate-700"
+                )}
+              >
+                <div className={cn(
+                  "absolute top-1 w-3 h-3 bg-white rounded-full transition-all shadow-sm",
+                  formData.isSplit ? "right-1" : "left-1"
+                )} />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Categoria ou Divisão */}
+        {!formData.isSplit ? (
           <div>
-            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Tipo de Pagamento</label>
+            <label className="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+              <Tag className="w-4 h-4 text-slate-400" />
+              Categoria
+            </label>
             <select
-              value={formData.paymentType}
-              onChange={(e) => setFormData({ ...formData, paymentType: e.target.value as any })}
-              className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 outline-none text-slate-900 dark:text-slate-100"
+              value={formData.category}
+              onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+              className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 outline-none text-slate-900 dark:text-slate-100 transition-all"
             >
-              {selectedAccount?.type !== 'credit' && <option value="debit" className="dark:bg-slate-900">Débito / Dinheiro</option>}
-              {(selectedAccount?.type === 'credit' || selectedAccount?.type === 'hybrid') && <option value="credit" className="dark:bg-slate-900">Cartão de Crédito</option>}
+              {categories
+                .filter(c => !c.parentId && (c.type === 'both' || c.type === formData.type))
+                .map(parent => {
+                  const subs = categories.filter(c => c.parentId === parent.id);
+                  if (subs.length === 0) {
+                    return <option key={parent.id} value={parent.name}>{parent.name}</option>;
+                  }
+                  return (
+                    <optgroup key={parent.id} label={parent.name} className="dark:bg-slate-900">
+                      <option value={parent.name}>{parent.name} (Geral)</option>
+                      {subs.map(sub => (
+                        <option key={sub.id} value={sub.name}>{sub.name}</option>
+                      ))}
+                    </optgroup>
+                  );
+                })}
             </select>
           </div>
+        ) : (
+          <div className="p-4 bg-slate-50/50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-slate-800">
+            <label className="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3">
+              <Layers className="w-4 h-4 text-slate-400" />
+              Divisão por Categorias
+            </label>
+            <div className="space-y-3">
+              {formData.splits.map((split, index) => (
+                <div key={index} className="flex gap-2 items-start">
+                  <div className="flex-1">
+                    <select
+                      value={split.category}
+                      onChange={(e) => {
+                        const newSplits = [...formData.splits];
+                        newSplits[index].category = e.target.value;
+                        setFormData({ ...formData, splits: newSplits });
+                      }}
+                      className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 text-slate-900 dark:text-slate-100"
+                    >
+                      <option value="">Categoria</option>
+                      {categories
+                        .filter(c => !c.parentId && (c.type === 'both' || c.type === formData.type))
+                        .map(parent => {
+                          const subs = categories.filter(c => c.parentId === parent.id);
+                          if (subs.length === 0) {
+                            return <option key={parent.id} value={parent.name}>{parent.name}</option>;
+                          }
+                          return (
+                            <optgroup key={parent.id} label={parent.name} className="dark:bg-slate-900">
+                              <option value={parent.name}>{parent.name} (Geral)</option>
+                              {subs.map(sub => (
+                                <option key={sub.id} value={sub.name}>{sub.name}</option>
+                              ))}
+                            </optgroup>
+                          );
+                        })}
+                    </select>
+                  </div>
+                  <div className="w-32 relative">
+                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] text-slate-400 font-bold">R$</span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={split.amount}
+                      onChange={(e) => {
+                        const newSplits = [...formData.splits];
+                        newSplits[index].amount = e.target.value;
+                        setFormData({ ...formData, splits: newSplits });
+                      }}
+                      className="w-full pl-7 pr-2 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 text-slate-900 dark:text-slate-100"
+                      placeholder="0,00"
+                    />
+                  </div>
+                  {formData.splits.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const newSplits = formData.splits.filter((_, i) => i !== index);
+                        setFormData({ ...formData, splits: newSplits });
+                      }}
+                      className="p-2 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg transition-all"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+              ))}
+              <button
+                type="button"
+                onClick={() => {
+                  setFormData({ ...formData, splits: [...formData.splits, { category: '', amount: '' }] });
+                }}
+                className="text-xs font-bold text-indigo-600 dark:text-indigo-400 flex items-center gap-1 hover:underline ml-1"
+              >
+                <Plus className="w-3 h-3" />
+                Adicionar Categoria
+              </button>
+            </div>
+          </div>
         )}
-      </div>
 
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Valor</label>
-          <div className="relative">
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">R$</span>
+        {/* Valor e Parcelas */}
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+              <DollarSign className="w-4 h-4 text-slate-400" />
+              Valor
+            </label>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold">R$</span>
+              <input
+                required
+                type="number"
+                step="0.01"
+                value={formData.amount}
+                onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
+                className="w-full pl-9 pr-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 outline-none text-slate-900 dark:text-slate-100 transition-all font-bold text-lg"
+                placeholder="0,00"
+              />
+            </div>
+          </div>
+          {formData.paymentType === 'credit' && (
+            <div>
+              <label className="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+                <List className="w-4 h-4 text-slate-400" />
+                Parcelas
+              </label>
+              <input
+                type="number"
+                min="1"
+                max="48"
+                value={formData.installments}
+                onChange={(e) => setFormData({ ...formData, installments: e.target.value })}
+                className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 outline-none text-slate-900 dark:text-slate-100 transition-all"
+              />
+            </div>
+          )}
+        </div>
+
+        {/* Data e Vencimento */}
+        <div className={cn("grid gap-4", formData.paymentType === 'credit' ? "grid-cols-1 sm:grid-cols-2" : "grid-cols-1")}>
+          <div>
+            <label className="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+              <Calendar className="w-4 h-4 text-slate-400" />
+              Data
+            </label>
             <input
               required
-              type="number"
-              step="0.01"
-              value={formData.amount}
-              onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
-              className="w-full pl-8 pr-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 focus:border-transparent outline-none transition-all text-slate-900 dark:text-slate-100"
-              placeholder="0,00"
+              type="date"
+              value={formData.date}
+              onChange={(e) => setFormData({ ...formData, date: e.target.value })}
+              className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 outline-none text-slate-900 dark:text-slate-100 transition-all"
             />
           </div>
-        </div>
-        {formData.paymentType === 'credit' && (
-          <div>
-            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Parcelas</label>
-            <input
-              type="number"
-              min="1"
-              max="48"
-              value={formData.installments}
-              onChange={(e) => setFormData({ ...formData, installments: e.target.value })}
-              className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 outline-none text-slate-900 dark:text-slate-100"
-            />
-          </div>
-        )}
-      </div>
-
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Categoria</label>
-          <select
-            value={formData.category}
-            onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-            className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 outline-none text-slate-900 dark:text-slate-100"
-          >
-            {categories
-              .filter(c => !c.parentId && (c.type === 'both' || c.type === formData.type))
-              .map(parent => {
-                const subs = categories.filter(c => c.parentId === parent.id);
-                if (subs.length === 0) {
-                  return <option key={parent.id} value={parent.name}>{parent.name}</option>;
-                }
-                return (
-                  <optgroup key={parent.id} label={parent.name} className="dark:bg-slate-900">
-                    <option value={parent.name}>{parent.name} (Geral)</option>
-                    {subs.map(sub => (
-                      <option key={sub.id} value={sub.name}>{sub.name}</option>
-                    ))}
-                  </optgroup>
-                );
-              })}
-          </select>
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Data</label>
-          <input
-            required
-            type="date"
-            value={formData.date}
-            onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-            className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 outline-none text-slate-900 dark:text-slate-100"
-          />
           {formData.paymentType === 'credit' && (
-            <div className="mt-3 p-3 bg-indigo-50 dark:bg-indigo-900/30 rounded-xl border border-indigo-100 dark:border-indigo-800">
-              <label className="block text-xs font-bold text-indigo-700 dark:text-indigo-400 mb-1 flex items-center gap-1">
+            <div className="p-3 bg-indigo-50/50 dark:bg-indigo-900/20 rounded-xl border border-indigo-100 dark:border-indigo-800/50">
+              <label className="flex items-center gap-2 text-xs font-bold text-indigo-700 dark:text-indigo-400 mb-1.5">
                 <Calendar className="w-3 h-3" />
                 Vencimento da Fatura
               </label>
@@ -4005,111 +4308,114 @@ function TransactionForm({ onSubmit, onCancel, categories: allCategories, accoun
                 type="date"
                 value={formData.dueDate}
                 onChange={(e) => setFormData({ ...formData, dueDate: e.target.value })}
-                className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-indigo-200 dark:border-indigo-700 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 outline-none text-slate-900 dark:text-slate-100"
+                className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-indigo-200 dark:border-indigo-700 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 outline-none text-slate-900 dark:text-slate-100 transition-all"
               />
-              <p className="text-[10px] text-indigo-500 dark:text-indigo-400 mt-1">
-                Calculado automaticamente, mas você pode ajustar se necessário.
-              </p>
+            </div>
+          )}
+        </div>
+
+        {/* Toggles e Opções Extras */}
+        <div className="space-y-3">
+          {formData.paymentType !== 'credit' && !formData.isSplit && (
+            <div className="p-4 bg-slate-50/50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-slate-800 transition-all hover:border-indigo-100 dark:hover:border-indigo-900/30">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-3">
+                  <div className={cn(
+                    "p-2 rounded-lg transition-colors",
+                    formData.isRecurring ? "bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400" : "bg-slate-100 dark:bg-slate-800 text-slate-400"
+                  )}>
+                    <RefreshCcw className="w-4 h-4" />
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">Transação Recorrente</span>
+                    <span className="text-[10px] text-slate-500 dark:text-slate-400">Repetir automaticamente</span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setFormData({ ...formData, isRecurring: !formData.isRecurring })}
+                  className={cn(
+                    "w-10 h-5 rounded-full transition-all relative",
+                    formData.isRecurring ? "bg-indigo-600" : "bg-slate-300 dark:bg-slate-700"
+                  )}
+                >
+                  <div className={cn(
+                    "absolute top-1 w-3 h-3 bg-white rounded-full transition-all shadow-sm",
+                    formData.isRecurring ? "right-1" : "left-1"
+                  )} />
+                </button>
+              </div>
+
+              <AnimatePresence>
+                {formData.isRecurring && (
+                  <motion.div 
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    className="grid grid-cols-2 gap-4 pt-3 border-t border-slate-200 dark:border-slate-700"
+                  >
+                    <div>
+                      <label className="block text-[10px] uppercase tracking-wider font-bold text-slate-400 dark:text-slate-500 mb-1">Frequência</label>
+                      <select
+                        value={formData.frequency}
+                        onChange={(e) => setFormData({ ...formData, frequency: e.target.value as any })}
+                        className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-900 dark:text-slate-100"
+                      >
+                        <option value="weekly" className="dark:bg-slate-900">Semanal</option>
+                        <option value="monthly" className="dark:bg-slate-900">Mensal</option>
+                        <option value="yearly" className="dark:bg-slate-900">Anual</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] uppercase tracking-wider font-bold text-slate-400 dark:text-slate-500 mb-1">Repetir por (vezes)</label>
+                      <input
+                        type="number"
+                        min="2"
+                        max="60"
+                        value={formData.recurringMonths}
+                        onChange={(e) => setFormData({ ...formData, recurringMonths: e.target.value })}
+                        className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-900 dark:text-slate-100"
+                      />
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          )}
+
+          {initialData?.groupId && (
+            <div className="p-4 bg-amber-50/50 dark:bg-amber-900/20 rounded-2xl border border-amber-100 dark:border-amber-800/50 transition-all">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className={cn(
+                    "p-2 rounded-lg transition-colors",
+                    updateFuture ? "bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400" : "bg-slate-100 dark:bg-slate-800 text-slate-400"
+                  )}>
+                    <RefreshCcw className="w-4 h-4" />
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">Atualizar próximas?</span>
+                    <span className="text-[10px] text-slate-500 dark:text-slate-400">Aplicar mudanças a todas as parcelas futuras</span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setUpdateFuture(!updateFuture)}
+                  className={cn(
+                    "w-10 h-5 rounded-full transition-all relative",
+                    updateFuture ? "bg-amber-600" : "bg-slate-300 dark:bg-slate-700"
+                  )}
+                >
+                  <div className={cn(
+                    "absolute top-1 w-3 h-3 bg-white rounded-full transition-all shadow-sm",
+                    updateFuture ? "right-1" : "left-1"
+                  )} />
+                </button>
+              </div>
             </div>
           )}
         </div>
       </div>
-
-      <div className="grid grid-cols-1 gap-4">
-        {formData.paymentType !== 'credit' && (
-          <div className="p-4 bg-slate-50/50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-slate-800 transition-all">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <RefreshCcw className={cn("w-4 h-4", formData.isRecurring ? "text-indigo-600 dark:text-indigo-400" : "text-slate-400 dark:text-slate-600")} />
-                <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">Repetir</span>
-              </div>
-              <button
-                type="button"
-                onClick={() => setFormData({ ...formData, isRecurring: !formData.isRecurring })}
-                className={cn(
-                  "w-10 h-5 rounded-full transition-all relative",
-                  formData.isRecurring ? "bg-indigo-600" : "bg-slate-300 dark:bg-slate-700"
-                )}
-              >
-                <div className={cn(
-                  "absolute top-1 w-3 h-3 bg-white rounded-full transition-all shadow-sm",
-                  formData.isRecurring ? "right-1" : "left-1"
-                )} />
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {formData.isRecurring && formData.paymentType !== 'credit' && (
-        <motion.div 
-          initial={{ height: 0, opacity: 0 }}
-          animate={{ height: 'auto', opacity: 1 }}
-          className="grid grid-cols-2 gap-4 p-4 bg-slate-50/50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-slate-800"
-        >
-          <div>
-            <label className="block text-[10px] uppercase tracking-wider font-bold text-slate-400 dark:text-slate-500 mb-1">Frequência</label>
-            <select
-              value={formData.frequency}
-              onChange={(e) => setFormData({ ...formData, frequency: e.target.value as any })}
-              className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-900 dark:text-slate-100"
-            >
-              <option value="weekly" className="dark:bg-slate-900">Semanal</option>
-              <option value="monthly" className="dark:bg-slate-900">Mensal</option>
-              <option value="yearly" className="dark:bg-slate-900">Anual</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-[10px] uppercase tracking-wider font-bold text-slate-400 dark:text-slate-500 mb-1">Repetir por (vezes)</label>
-            <input
-              type="number"
-              min="2"
-              max="60"
-              value={formData.recurringMonths}
-              onChange={(e) => setFormData({ ...formData, recurringMonths: e.target.value })}
-              className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-900 dark:text-slate-100"
-            />
-          </div>
-        </motion.div>
-      )}
-
-      <div>
-        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Descrição (Opcional)</label>
-        <input
-          type="text"
-          value={formData.description}
-          onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-          className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 outline-none text-slate-900 dark:text-slate-100"
-          placeholder="O que foi isso?"
-        />
-      </div>
-
-      {initialData?.groupId && (
-        <div className="p-4 bg-amber-50/50 dark:bg-amber-900/20 rounded-2xl border border-amber-100 dark:border-amber-800/50 transition-all">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <RefreshCcw className={cn("w-4 h-4", updateFuture ? "text-amber-600 dark:text-amber-400" : "text-slate-400 dark:text-slate-600")} />
-              <div className="flex flex-col">
-                <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">Atualizar próximas?</span>
-                <span className="text-[10px] text-slate-500 dark:text-slate-400">Aplicar mudanças a todas as parcelas/repetições futuras</span>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => setUpdateFuture(!updateFuture)}
-              className={cn(
-                "w-10 h-5 rounded-full transition-all relative",
-                updateFuture ? "bg-amber-600" : "bg-slate-300 dark:bg-slate-700"
-              )}
-            >
-              <div className={cn(
-                "absolute top-1 w-3 h-3 bg-white rounded-full transition-all shadow-sm",
-                updateFuture ? "right-1" : "left-1"
-              )} />
-            </button>
-          </div>
-        </div>
-      )}
 
       <div className="flex gap-3 pt-4">
         <button
