@@ -434,11 +434,11 @@ function BottomNav({ activeView, setActiveView, onAdd, onAccounts, onCategories,
       </button>
 
       <button 
-        onClick={onSettings}
+        onClick={onCategories}
         className="flex flex-col items-center gap-1 flex-1 text-slate-400 dark:text-slate-500 active:text-indigo-600 transition-colors"
       >
-        <Settings className="w-5 h-5" />
-        <span className="text-[9px] font-bold">Ajustes</span>
+        <Tag className="w-5 h-5" />
+        <span className="text-[9px] font-bold">Categorias</span>
       </button>
     </div>
   );
@@ -1783,9 +1783,17 @@ function AppContent() {
           <>
             {/* Header & Month Filter */}
             <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6 mb-8">
-              <div>
-                <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Painel Financeiro</h1>
-                <p className="text-slate-500 dark:text-slate-400">Olá, {(userProfile?.displayName || user.displayName)?.split(' ')[0]}! Veja como estão suas finanças.</p>
+              <div className="flex justify-between items-center w-full lg:w-auto">
+                <div>
+                  <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Painel Financeiro</h1>
+                  <p className="text-slate-500 dark:text-slate-400">Olá, {(userProfile?.displayName || user.displayName)?.split(' ')[0]}! Veja como estão suas finanças.</p>
+                </div>
+                <button 
+                  onClick={() => setShowSettingsModal(true)}
+                  className="lg:hidden p-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm text-slate-400 hover:text-indigo-600 transition-all"
+                >
+                  <Settings className="w-5 h-5" />
+                </button>
               </div>
               
               <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3 w-full lg:w-auto">
