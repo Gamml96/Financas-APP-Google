@@ -164,6 +164,8 @@ import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import { AIAssistant } from './components/AIAssistant';
+import { FinancialSummary } from './services/geminiService';
 
 // Utility for Tailwind classes
 function cn(...inputs: ClassValue[]) {
@@ -1098,6 +1100,39 @@ function AppContent() {
       };
     });
   }, [budgets, categoryData, filterMonth, allCategories]);
+
+  const financialSummary = useMemo<FinancialSummary>(() => {
+    const income = analysisTransactions
+      .filter(t => t.type === 'income')
+      .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+    
+    const expense = analysisTransactions
+      .filter(t => t.type === 'expense')
+      .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+
+    return {
+      totalIncome: income,
+      totalExpense: expense,
+      balance: income - expense,
+      categories: categoryData.map(c => ({
+        name: c.name,
+        amount: c.value,
+        type: 'expense' as const
+      })),
+      recentTransactions: transactions.slice(0, 10).map(t => ({
+        description: t.description || t.category,
+        amount: Number(t.amount) || 0,
+        category: t.category,
+        type: t.type as 'income' | 'expense',
+        date: format(t.date instanceof Timestamp ? t.date.toDate() : new Date(t.date), 'dd/MM/yyyy')
+      })),
+      budgets: budgetProgress.map(b => ({
+        category: b.category,
+        limit: b.amount,
+        spent: b.spent
+      }))
+    };
+  }, [analysisTransactions, categoryData, transactions, budgetProgress]);
 
   const dailyBalanceData = useMemo(() => {
     const start = startOfMonth(filterMonth);
@@ -2787,6 +2822,8 @@ function AppContent() {
           </div>
         )}
       </AnimatePresence>
+
+      <AIAssistant summary={financialSummary} />
     </div>
   );
 }
