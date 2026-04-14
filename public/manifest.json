@@ -1,8 +1,8 @@
 {
   "name": "Tô de Olho",
   "short_name": "Tô de Olho",
-  "start_url": "/?utm_source=pwa",
-  "display": "standalone",
+  "start_url": "/",
+  "display": "fullscreen",
   "orientation": "portrait",
   "background_color": "#f8fafc",
   "theme_color": "#4f46e5",
