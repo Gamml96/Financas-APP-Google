@@ -465,6 +465,7 @@ function AppContent() {
   const [showImportModal, setShowImportModal] = useState(false);
   const [showResetModal, setShowResetModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [showNotificationCenter, setShowNotificationCenter] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
   const [activeView, setActiveView] = useState<'dashboard' | 'invoices'>('dashboard');
   const [listMode, setListMode] = useState<'detailed' | 'compact'>('compact');
@@ -633,41 +634,51 @@ function AppContent() {
       const futureDate = endOfDay(addDays(now, reminderDays));
       const startRange = startOfDay(now);
 
-      transactions.forEach(tx => {
-        // Only check expenses with a due date
+      const upcomingBills = transactions.filter(tx => {
         if (tx.type === 'expense' && tx.dueDate) {
           const dueDate = tx.dueDate instanceof Timestamp ? tx.dueDate.toDate() : new Date(tx.dueDate);
-          
-          // If due within configured days (including today)
-          if (dueDate >= startRange && dueDate <= futureDate) {
-            const storageKey = `notified_${user.uid}_${tx.id}`;
-            if (!localStorage.getItem(storageKey)) {
-              try {
-                // Use Service Worker for better mobile support
-                if ("serviceWorker" in navigator) {
-                  navigator.serviceWorker.ready.then(registration => {
-                    registration.showNotification("Conta a vencer em breve!", {
-                      body: `A conta "${tx.description || tx.category}" de ${tx.amount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} vence em ${format(dueDate, 'dd/MM/yyyy')}.`,
-                      icon: "https://www.google.com/favicon.ico",
-                      badge: "https://www.google.com/favicon.ico",
-                      vibrate: [200, 100, 200],
-                      tag: tx.id // Prevent duplicate notifications for same transaction
-                    } as any);
-                  });
-                } else {
-                  new Notification("Conta a vencer em breve!", {
-                    body: `A conta "${tx.description || tx.category}" de ${tx.amount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} vence em ${format(dueDate, 'dd/MM/yyyy')}.`,
-                    icon: "https://www.google.com/favicon.ico"
-                  });
-                }
-                localStorage.setItem(storageKey, 'true');
-              } catch (e) {
-                console.warn("Falha ao enviar notificação nativa:", e);
-              }
-            }
-          }
+          return dueDate >= startRange && dueDate <= futureDate;
         }
+        return false;
       });
+
+      if (upcomingBills.length === 0) return;
+
+      // Create a unique key for this set of bills to avoid re-notifying if nothing changed
+      const billsKey = upcomingBills.map(tx => tx.id).sort().join('_');
+      const storageKey = `notified_summary_${user.uid}_${format(now, 'yyyy-MM-dd')}`;
+      
+      // If we already notified today about these exact bills, skip
+      if (localStorage.getItem(storageKey) === billsKey) return;
+
+      const totalAmount = upcomingBills.reduce((sum, tx) => sum + (Number(tx.amount) || 0), 0);
+      const title = upcomingBills.length === 1 ? "Conta a vencer em breve!" : "Contas a vencer em breve!";
+      const body = upcomingBills.length === 1 
+        ? `A conta "${upcomingBills[0].description || upcomingBills[0].category}" de ${upcomingBills[0].amount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} vence em ${format(upcomingBills[0].dueDate instanceof Timestamp ? upcomingBills[0].dueDate.toDate() : new Date(upcomingBills[0].dueDate), 'dd/MM/yyyy')}.`
+        : `Você tem ${upcomingBills.length} contas vencendo nos próximos dias, totalizando ${totalAmount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}.`;
+
+      try {
+        if ("serviceWorker" in navigator) {
+          navigator.serviceWorker.ready.then(registration => {
+            registration.showNotification(title, {
+              body,
+              icon: "https://www.google.com/favicon.ico",
+              badge: "https://www.google.com/favicon.ico",
+              vibrate: [200, 100, 200],
+              tag: 'upcoming_bills_summary' // Consolidate into one notification slot
+            } as any);
+          });
+        } else {
+          new Notification(title, {
+            body,
+            icon: "https://www.google.com/favicon.ico",
+            tag: 'upcoming_bills_summary'
+          });
+        }
+        localStorage.setItem(storageKey, billsKey);
+      } catch (e) {
+        console.warn("Falha ao enviar notificação nativa:", e);
+      }
     };
 
     checkUpcomingBills();
@@ -1687,22 +1698,30 @@ function AppContent() {
               </button>
 
               <button 
-                onClick={() => setShowAddModal(true)}
-                className="hidden md:flex items-center gap-2 text-slate-600 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-50/50 dark:hover:bg-indigo-900/20 px-4 py-2 rounded-xl transition-all font-semibold text-sm active:scale-95"
-              >
-                <Plus className="w-4 h-4" />
-                <span className="hidden md:inline">Novo Lançamento</span>
-              </button>
-
-              <button 
-                onClick={requestNotificationPermission}
+                onClick={() => {
+                  if (notificationsEnabled) {
+                    setShowNotificationCenter(true);
+                  } else {
+                    requestNotificationPermission();
+                  }
+                }}
                 className={cn(
-                  "p-2 rounded-full transition-colors",
+                  "p-2 rounded-full transition-colors relative",
                   notificationsEnabled ? "text-indigo-600 bg-indigo-50 dark:bg-indigo-900/20" : "text-slate-400 hover:text-indigo-600 hover:bg-slate-50 dark:hover:bg-slate-800"
                 )}
-                title={notificationsEnabled ? "Notificações Ativas" : "Ativar Notificações"}
+                title={notificationsEnabled ? "Ver Notificações" : "Ativar Notificações"}
               >
                 {notificationsEnabled ? <Bell className="w-5 h-5" /> : <BellOff className="w-5 h-5" />}
+                {notificationsEnabled && transactions.some(tx => {
+                  if (tx.type !== 'expense' || !tx.dueDate) return false;
+                  const dueDate = tx.dueDate instanceof Timestamp ? tx.dueDate.toDate() : new Date(tx.dueDate);
+                  const now = new Date();
+                  const reminderDays = userProfile?.reminderDaysBefore !== undefined ? userProfile.reminderDaysBefore : 3;
+                  const futureDate = endOfDay(addDays(now, reminderDays));
+                  return dueDate >= startOfDay(now) && dueDate <= futureDate;
+                }) && (
+                  <span className="absolute top-1 right-1 w-2 h-2 bg-rose-500 rounded-full border-2 border-white dark:border-slate-900"></span>
+                )}
               </button>
 
               <button 
@@ -2832,6 +2851,147 @@ function AppContent() {
       </AnimatePresence>
 
       <AnimatePresence>
+        {showNotificationCenter && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowNotificationCenter(false)}
+              className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
+            />
+            <motion.div 
+              initial={{ scale: 0.95, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 20 }}
+              className="bg-white dark:bg-slate-900 w-full max-w-lg rounded-2xl shadow-2xl relative z-10 overflow-hidden flex flex-col max-h-[80vh]"
+            >
+              <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-white dark:bg-slate-900">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-indigo-50 dark:bg-indigo-900/30 rounded-lg">
+                    <Bell className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+                  </div>
+                  <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">Notificações</h2>
+                </div>
+                <button onClick={() => setShowNotificationCenter(false)} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors">
+                  <X className="w-5 h-5 text-slate-400" />
+                </button>
+              </div>
+              
+              <div className="flex-1 overflow-y-auto p-6 bg-slate-50/50 dark:bg-slate-950/50">
+                {(() => {
+                  const now = new Date();
+                  const reminderDays = userProfile?.reminderDaysBefore !== undefined ? userProfile.reminderDaysBefore : 3;
+                  const futureDate = endOfDay(addDays(now, reminderDays));
+                  const startRange = startOfDay(now);
+
+                  const upcomingBills = transactions.filter(tx => {
+                    if (tx.type !== 'expense' || !tx.dueDate) return false;
+                    const dueDate = tx.dueDate instanceof Timestamp ? tx.dueDate.toDate() : new Date(tx.dueDate);
+                    return dueDate >= startRange && dueDate <= futureDate;
+                  });
+
+                  if (upcomingBills.length === 0) {
+                    return (
+                      <div className="text-center py-12">
+                        <div className="bg-white dark:bg-slate-900 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 shadow-sm">
+                          <BellOff className="w-8 h-8 text-slate-200 dark:text-slate-800" />
+                        </div>
+                        <h3 className="text-slate-900 dark:text-slate-100 font-semibold mb-1">Tudo em dia!</h3>
+                        <p className="text-slate-500 dark:text-slate-400 text-sm">Nenhuma conta vencendo nos próximos {reminderDays} dias.</p>
+                      </div>
+                    );
+                  }
+
+                  // Group by Month
+                  const grouped: Record<string, Transaction[]> = {};
+                  upcomingBills.forEach(tx => {
+                    const dueDate = tx.dueDate instanceof Timestamp ? tx.dueDate.toDate() : new Date(tx.dueDate);
+                    const key = format(dueDate, 'yyyy-MM');
+                    if (!grouped[key]) grouped[key] = [];
+                    grouped[key].push(tx);
+                  });
+
+                  return Object.entries(grouped)
+                    .sort((a, b) => a[0].localeCompare(b[0]))
+                    .map(([monthKey, bills]) => (
+                      <div key={monthKey} className="mb-8 last:mb-0">
+                        <div className="flex items-center gap-3 mb-4">
+                          <span className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 bg-white dark:bg-slate-900 px-2 py-1 rounded-md border border-slate-100 dark:border-slate-800 shadow-sm capitalize">
+                            {format(parseISO(monthKey + '-01'), 'MMMM yyyy', { locale: ptBR })}
+                          </span>
+                          <div className="h-px flex-1 bg-slate-200 dark:bg-slate-800"></div>
+                        </div>
+                        <div className="space-y-3">
+                          {bills.sort((a, b) => {
+                            const d1 = a.dueDate instanceof Timestamp ? a.dueDate.toDate() : new Date(a.dueDate);
+                            const d2 = b.dueDate instanceof Timestamp ? b.dueDate.toDate() : new Date(b.dueDate);
+                            return d1.getTime() - d2.getTime();
+                          }).map(tx => {
+                            const dueDate = tx.dueDate instanceof Timestamp ? tx.dueDate.toDate() : new Date(tx.dueDate);
+                            const isOverdue = isBefore(dueDate, startOfDay(now));
+                            const isTodayDue = isToday(dueDate);
+
+                            return (
+                              <div key={tx.id} className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm hover:border-indigo-200 dark:hover:border-indigo-800 transition-all group">
+                                <div className="flex justify-between items-start mb-2">
+                                  <div className="flex items-center gap-3">
+                                    <div className={cn(
+                                      "p-2 rounded-lg",
+                                      isOverdue ? "bg-rose-50 dark:bg-rose-900/20 text-rose-600 dark:text-rose-400" :
+                                      isTodayDue ? "bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400" :
+                                      "bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400"
+                                    )}>
+                                      <AlertCircle className="w-4 h-4" />
+                                    </div>
+                                    <div>
+                                      <p className="font-bold text-slate-900 dark:text-slate-100 text-sm leading-tight">{tx.description || tx.category}</p>
+                                      <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium uppercase tracking-wide mt-0.5">
+                                        Vence em {format(dueDate, "dd 'de' MMMM", { locale: ptBR })}
+                                      </p>
+                                    </div>
+                                  </div>
+                                  <div className="text-right">
+                                    <p className="font-bold text-slate-900 dark:text-slate-100 text-sm">{formatCurrency(tx.amount)}</p>
+                                    <span className={cn(
+                                      "text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider",
+                                      isOverdue ? "bg-rose-100 dark:bg-rose-900/40 text-rose-700 dark:text-rose-400" :
+                                      isTodayDue ? "bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400" :
+                                      "bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-400"
+                                    )}>
+                                      {isOverdue ? 'Atrasado' : isTodayDue ? 'Vence Hoje' : 'Próximo'}
+                                    </span>
+                                  </div>
+                                </div>
+                                <div className="flex justify-end gap-2 mt-3 pt-3 border-t border-slate-50 dark:border-slate-800 opacity-0 group-hover:opacity-100 transition-opacity">
+                                  <button 
+                                    onClick={() => {
+                                      setEditingTransaction(tx);
+                                      setShowNotificationCenter(false);
+                                    }}
+                                    className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline"
+                                  >
+                                    Ver Detalhes
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ));
+                })()}
+              </div>
+              
+              <div className="p-4 bg-white dark:bg-slate-900 border-t border-slate-100 dark:border-slate-800 text-center">
+                <p className="text-[10px] text-slate-400 dark:text-slate-500 font-medium">
+                  Você será notificado {userProfile?.reminderDaysBefore || 3} dias antes do vencimento.
+                </p>
+              </div>
+            </motion.div>
+          </div>
+        )}
+
         {showSettingsModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <motion.div 
