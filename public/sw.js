@@ -1,4 +1,4 @@
-const CACHE_NAME = 'to-de-olho-v3';
+const CACHE_NAME = 'to-de-olho-v4';
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();
