@@ -1,6 +1,6 @@
 {
   "name": "Tô de Olho",
-  "short_name": "Tô de Olho",
+  "short_name": "Olho",
   "description": "Controle financeiro pessoal inteligente",
   "id": "/",
   "start_url": "/",
@@ -11,20 +11,18 @@
   "theme_color": "#4f46e5",
   "icons": [
     {
-      "src": "https://cdn-icons-png.flaticon.com/512/2845/2845812.png",
+      "src": "/icon-192.png",
       "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "any"
+      "type": "image/png"
     },
     {
-      "src": "https://cdn-icons-png.flaticon.com/512/2845/2845812.png",
+      "src": "/icon-512.png",
       "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any"
+      "type": "image/png"
     },
     {
-      "src": "https://cdn-icons-png.flaticon.com/512/2845/2845812.png",
-      "sizes": "192x192",
+      "src": "/icon-512-maskable.png",
+      "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
     }
