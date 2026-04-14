@@ -10,11 +10,40 @@
     --sal: env(safe-area-inset-left);
   }
 
+  html, body {
+    height: 100%;
+    width: 100%;
+    overflow: hidden;
+    position: fixed;
+  }
+
   body {
     padding-top: var(--sat);
     padding-right: var(--sar);
     padding-bottom: var(--sab);
     padding-left: var(--sal);
-    @apply bg-slate-50 dark:bg-slate-950;
+    @apply bg-slate-50 dark:bg-slate-950 antialiased;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+    user-select: none;
+    overscroll-behavior-y: none;
+  }
+
+  /* Allow selection in inputs and textareas */
+  input, textarea, [contenteditable="true"] {
+    user-select: text;
+    -webkit-touch-callout: default;
+  }
+
+  #root {
+    height: 100%;
+    width: 100%;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Smooth scrolling only for the main content */
+  main {
+    -webkit-overflow-scrolling: touch;
   }
 }
