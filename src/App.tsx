@@ -630,6 +630,19 @@ function AppContent() {
 
     const checkUpcomingBills = () => {
       const now = new Date();
+      
+      // Check if it's the right time to notify
+      const configuredTime = userProfile?.reminderTime || '09:00';
+      const [configHour, configMinute] = configuredTime.split(':').map(Number);
+      
+      const currentHour = now.getHours();
+      const currentMinute = now.getMinutes();
+      
+      // Only check if we are at or after the configured time
+      if (currentHour < configHour || (currentHour === configHour && currentMinute < configMinute)) {
+        return;
+      }
+
       const reminderDays = userProfile?.reminderDaysBefore !== undefined ? userProfile.reminderDaysBefore : 3;
       const futureDate = endOfDay(addDays(now, reminderDays));
       const startRange = startOfDay(now);
@@ -753,7 +766,8 @@ function AppContent() {
           photoURL: user.photoURL,
           createdAt: Timestamp.now(),
           currency: 'BRL',
-          reminderDaysBefore: 3
+          reminderDaysBefore: 3,
+          reminderTime: '09:00'
         });
       }
     }, (error) => {
@@ -3153,6 +3167,7 @@ function AccessDeniedView({ onLogout, userEmail }: { onLogout: () => void, userE
 function SettingsManager({ userProfile, onUpdateProfile, onResetData }: { userProfile: any, onUpdateProfile: (data: any) => Promise<void>, onResetData: () => void }) {
   const [name, setName] = useState(userProfile?.displayName || '');
   const [reminderDays, setReminderDays] = useState(userProfile?.reminderDaysBefore || 3);
+  const [reminderTime, setReminderTime] = useState(userProfile?.reminderTime || '09:00');
   const [isSavingName, setIsSavingName] = useState(false);
   const [isSavingReminders, setIsSavingReminders] = useState(false);
   const isAdmin = userProfile?.email === ADMIN_EMAIL;
@@ -3163,6 +3178,9 @@ function SettingsManager({ userProfile, onUpdateProfile, onResetData }: { userPr
     }
     if (userProfile?.reminderDaysBefore !== undefined) {
       setReminderDays(userProfile.reminderDaysBefore);
+    }
+    if (userProfile?.reminderTime) {
+      setReminderTime(userProfile.reminderTime);
     }
   }, [userProfile]);
 
@@ -3178,7 +3196,10 @@ function SettingsManager({ userProfile, onUpdateProfile, onResetData }: { userPr
   const handleSaveReminders = async () => {
     setIsSavingReminders(true);
     try {
-      await onUpdateProfile({ reminderDaysBefore: reminderDays });
+      await onUpdateProfile({ 
+        reminderDaysBefore: reminderDays,
+        reminderTime: reminderTime
+      });
     } finally {
       setIsSavingReminders(false);
     }
@@ -3186,33 +3207,48 @@ function SettingsManager({ userProfile, onUpdateProfile, onResetData }: { userPr
 
   return (
     <div className="space-y-8">
+      {/* Perfil Section */}
       <div className="space-y-4">
-        <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Perfil</h3>
-        <div className="space-y-4">
-          <div className="space-y-2">
-            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Como quer ser chamado?</label>
-            <div className="flex gap-2">
-              <input 
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Seu nome"
-                className="flex-1 px-4 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-slate-900 dark:text-slate-100"
-                disabled={isSavingName}
-              />
-              <button 
-                onClick={handleSaveName}
-                disabled={isSavingName}
-                className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-indigo-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed min-w-[80px]"
-              >
-                {isSavingName ? '...' : 'Salvar'}
-              </button>
-            </div>
+        <div className="flex items-center gap-2 mb-2">
+          <UserIcon className="w-4 h-4 text-slate-400" />
+          <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Perfil</h3>
+        </div>
+        <div className="space-y-2">
+          <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Como quer ser chamado?</label>
+          <div className="flex gap-2">
+            <input 
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Seu nome"
+              className="flex-1 px-4 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-slate-900 dark:text-slate-100"
+              disabled={isSavingName}
+            />
+            <button 
+              onClick={handleSaveName}
+              disabled={isSavingName}
+              className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-indigo-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed min-w-[80px]"
+            >
+              {isSavingName ? '...' : 'Salvar'}
+            </button>
           </div>
+        </div>
+      </div>
 
-          <div className="space-y-2">
-            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Lembrete de contas (dias antes do vencimento)</label>
-            <div className="flex gap-2">
+      {/* Notificações Section */}
+      <div className="space-y-4">
+        <div className="flex items-center gap-2 mb-2">
+          <Bell className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+          <h3 className="text-sm font-semibold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider">Lembretes de Contas</h3>
+        </div>
+        
+        <div className="bg-slate-50 dark:bg-slate-800/50 p-5 rounded-2xl border border-slate-100 dark:border-slate-800 space-y-5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <label className="text-xs font-medium text-slate-500 dark:text-slate-400 flex items-center gap-1">
+                <Calendar className="w-3 h-3" />
+                Dias de antecedência
+              </label>
               <input 
                 type="number"
                 min="0"
@@ -3222,18 +3258,41 @@ function SettingsManager({ userProfile, onUpdateProfile, onResetData }: { userPr
                   const val = e.target.value === '' ? 0 : parseInt(e.target.value);
                   setReminderDays(isNaN(val) ? 0 : val);
                 }}
-                className="flex-1 px-4 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-slate-900 dark:text-slate-100"
+                className="w-full px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-slate-900 dark:text-slate-100"
                 disabled={isSavingReminders}
               />
-              <button 
-                onClick={handleSaveReminders}
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-xs font-medium text-slate-500 dark:text-slate-400 flex items-center gap-1">
+                <RefreshCcw className="w-3 h-3" />
+                Horário do alerta
+              </label>
+              <input 
+                type="time"
+                value={reminderTime}
+                onChange={(e) => setReminderTime(e.target.value)}
+                className="w-full px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-slate-900 dark:text-slate-100"
                 disabled={isSavingReminders}
-                className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-indigo-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed min-w-[80px]"
-              >
-                {isSavingReminders ? '...' : 'Salvar'}
-              </button>
+              />
             </div>
           </div>
+
+          <button 
+            onClick={handleSaveReminders}
+            disabled={isSavingReminders}
+            className="w-full bg-indigo-600 text-white py-3 rounded-xl text-sm font-bold hover:bg-indigo-700 transition-all shadow-md shadow-indigo-100 dark:shadow-none disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+          >
+            {isSavingReminders ? (
+              <RefreshCcw className="w-5 h-5 animate-spin" />
+            ) : (
+              'Salvar Preferências de Alerta'
+            )}
+          </button>
+          
+          <p className="text-[10px] text-slate-400 dark:text-slate-500 text-center">
+            As notificações serão enviadas no horário definido para as contas que vencem no período de antecedência.
+          </p>
         </div>
       </div>
 
