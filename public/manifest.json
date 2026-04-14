@@ -1,29 +1,32 @@
 {
   "name": "Tô de Olho",
   "short_name": "Tô de Olho",
+  "description": "Controle financeiro pessoal inteligente",
+  "id": "/",
   "start_url": "/",
-  "display": "fullscreen",
+  "scope": "/",
+  "display": "standalone",
   "orientation": "portrait",
   "background_color": "#f8fafc",
   "theme_color": "#4f46e5",
   "icons": [
     {
-      "src": "https://www.google.com/favicon.ico",
-      "sizes": "64x64",
-      "type": "image/x-icon",
+      "src": "https://cdn-icons-png.flaticon.com/512/2845/2845812.png",
+      "sizes": "192x192",
+      "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "https://www.google.com/favicon.ico",
-      "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "any maskable"
-    },
-    {
-      "src": "https://www.google.com/favicon.ico",
+      "src": "https://cdn-icons-png.flaticon.com/512/2845/2845812.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/2845/2845812.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ]
 }
