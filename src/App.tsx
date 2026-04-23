@@ -174,6 +174,7 @@ function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+const APP_ICON = "https://i.postimg.cc/MGFSqd7F/1776539933739.png";
 const ADMIN_EMAIL = "gamml1996@gmail.com";
 
 const FINANCIAL_TIPS = [
@@ -551,7 +552,25 @@ function AppContent() {
     // Register Service Worker for mobile notifications
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("/sw.js")
-        .then(reg => console.log("Service Worker registrado:", reg))
+        .then(async (reg) => {
+          console.log("Service Worker registrado:", reg);
+          
+          // Tentar registrar Periodic Sync para notificações em segundo plano mais confiáveis
+          try {
+            const status = await (navigator as any).permissions.query({
+              name: 'periodic-background-sync',
+            });
+            
+            if (status.state === 'granted' && 'periodicSync' in reg) {
+              await (reg as any).periodicSync.register('check-bills', {
+                minInterval: 24 * 60 * 60 * 1000, // Tentar 1x por dia pelo menos
+              });
+              console.log('Periodic Sync registrado!');
+            }
+          } catch (e) {
+            console.log('Periodic Sync não suportado ou negado');
+          }
+        })
         .catch(err => console.error("Erro ao registrar Service Worker:", err));
     }
   }, []);
@@ -596,20 +615,20 @@ function AppContent() {
           navigator.serviceWorker.ready.then(registration => {
             registration.showNotification("Tô de Olho", {
               body: "As notificações de contas a vencer estão ativas.",
-              icon: "https://www.google.com/favicon.ico",
-              badge: "https://www.google.com/favicon.ico"
+              icon: APP_ICON,
+              badge: APP_ICON
             });
           }).catch(() => {
             // Fallback to standard notification
             new Notification("Tô de Olho", {
               body: "As notificações de contas a vencer estão ativas.",
-              icon: "https://www.google.com/favicon.ico"
+              icon: APP_ICON
             });
           });
         } else {
           new Notification("Tô de Olho", {
             body: "As notificações de contas a vencer estão ativas.",
-            icon: "https://www.google.com/favicon.ico"
+            icon: APP_ICON
           });
         }
       } else {
@@ -675,8 +694,8 @@ function AppContent() {
           navigator.serviceWorker.ready.then(registration => {
             registration.showNotification(title, {
               body,
-              icon: "https://www.google.com/favicon.ico",
-              badge: "https://www.google.com/favicon.ico",
+              icon: APP_ICON,
+              badge: APP_ICON,
               vibrate: [200, 100, 200],
               tag: 'upcoming_bills_summary' // Consolidate into one notification slot
             } as any);
@@ -684,7 +703,7 @@ function AppContent() {
         } else {
           new Notification(title, {
             body,
-            icon: "https://www.google.com/favicon.ico",
+            icon: APP_ICON,
             tag: 'upcoming_bills_summary'
           });
         }
@@ -3288,6 +3307,29 @@ function SettingsManager({ userProfile, onUpdateProfile, onResetData }: { userPr
             ) : (
               'Salvar Preferências de Alerta'
             )}
+          </button>
+
+          <button 
+            onClick={() => {
+              if ("Notification" in window) {
+                if (Notification.permission === "granted") {
+                  navigator.serviceWorker.ready.then(reg => {
+                    reg.showNotification("Teste de Notificação", {
+                      body: "Seus alertas estão configurados corretamente!",
+                      icon: APP_ICON,
+                      badge: APP_ICON,
+                      vibrate: [100, 50, 100],
+                    } as any);
+                  });
+                } else {
+                  alert("Por favor, ative as notificações primeiro no topo da tela.");
+                }
+              }
+            }}
+            className="w-full bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 py-2 rounded-xl text-xs font-semibold border border-slate-200 dark:border-slate-800 hover:bg-slate-50 transition-all flex items-center justify-center gap-2"
+          >
+            <Bell className="w-3.5 h-3.5" />
+            Testar Alerta Agora
           </button>
           
           <p className="text-[10px] text-slate-400 dark:text-slate-500 text-center">
