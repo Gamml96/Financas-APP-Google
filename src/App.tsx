@@ -478,7 +478,28 @@ function AppContent() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedAccountId, setSelectedAccountId] = useState<string>('all');
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
+  const [isOffline, setIsOffline] = useState(() => typeof navigator !== 'undefined' ? !navigator.onLine : false);
   const [toast, setToast] = useState<{ message: string, type: 'success' | 'error' | 'info' } | null>(null);
+
+  // Online/Offline handling
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOffline(false);
+      setToast({ message: "Conexão restaurada! Sincronizando dados...", type: 'success' });
+    };
+    const handleOffline = () => {
+      setIsOffline(true);
+      setToast({ message: "Você está offline. As alterações serão salvas localmente.", type: 'info' });
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
   const [isPrivateMode, setIsPrivateMode] = useState(() => {
     if (typeof window !== 'undefined') {
       return localStorage.getItem('isPrivateMode') === 'true';
@@ -1829,6 +1850,21 @@ function AppContent() {
           </div>
         </div>
       </nav>
+
+      {/* Offline Indicator */}
+      <AnimatePresence>
+        {isOffline && (
+          <motion.div 
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="bg-amber-500 text-white text-[10px] sm:text-xs font-bold py-1.5 px-4 text-center sticky top-16 z-20 flex items-center justify-center gap-2"
+          >
+            <Wifi className="w-3 h-3 sm:w-4 sm:h-4 animate-pulse" />
+            Modo Offline Ativo - Suas alterações serão sincronizadas quando a internet voltar
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 pb-24 sm:pb-8">
         {activeView === 'dashboard' ? (

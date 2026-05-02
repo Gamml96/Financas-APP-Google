@@ -22,7 +22,8 @@ import {
   updateDoc, 
   writeBatch,
   Timestamp,
-  getDocFromServer
+  getDocFromServer,
+  enableMultiTabIndexedDbPersistence
 } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
 
@@ -35,6 +36,17 @@ const databaseId = firebaseConfig.firestoreDatabaseId && !firebaseConfig.firesto
   : '(default)';
 
 export const db = getFirestore(app, databaseId);
+
+// Habilitar persistência offline
+if (typeof window !== 'undefined') {
+  enableMultiTabIndexedDbPersistence(db).catch((err) => {
+    if (err.code === 'failed-precondition') {
+      console.warn('A persistência falhou: Múltiplas abas abertas.');
+    } else if (err.code === 'unimplemented') {
+      console.warn('A persistência não é suportada por este navegador.');
+    }
+  });
+}
 
 const googleProvider = new GoogleAuthProvider();
 
