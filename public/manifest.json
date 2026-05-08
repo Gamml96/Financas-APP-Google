@@ -1,6 +1,6 @@
 {
-  "name": "Tô de Olho",
-  "short_name": "Tô de Olho",
+  "name": "Vidi",
+  "short_name": "Vidi",
   "description": "Controle financeiro pessoal inteligente",
   "id": "/",
   "start_url": "/",
@@ -11,19 +11,19 @@
   "theme_color": "#4f46e5",
   "icons": [
     {
-      "src": "https://i.postimg.cc/MGFSqd7F/1776539933739.png",
+      "src": "https://i.postimg.cc/FsxNpV4m/Gemini-Generated-Image-h73zf3h73zf3h73z-(1).png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "https://i.postimg.cc/MGFSqd7F/1776539933739.png",
+      "src": "https://i.postimg.cc/FsxNpV4m/Gemini-Generated-Image-h73zf3h73zf3h73z-(1).png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "https://i.postimg.cc/MGFSqd7F/1776539933739.png",
+      "src": "https://i.postimg.cc/FsxNpV4m/Gemini-Generated-Image-h73zf3h73zf3h73z-(1).png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
