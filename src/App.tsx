@@ -174,7 +174,7 @@ function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-const APP_ICON = "https://i.postimg.cc/MGFSqd7F/1776539933739.png";
+const APP_ICON = "https://i.postimg.cc/FsxNpV4m/Gemini-Generated-Image-h73zf3h73zf3h73z-(1).png";
 const ADMIN_EMAIL = "gamml1996@gmail.com";
 
 const FINANCIAL_TIPS = [
@@ -383,6 +383,14 @@ export default function App() {
   );
 }
 
+
+function Logo({ className, iconClassName }: { className?: string, iconClassName?: string }) {
+  return (
+    <div className={cn("flex items-center justify-center", className)}>
+      <img src="https://i.postimg.cc/FsxNpV4m/Gemini-Generated-Image-h73zf3h73zf3h73z-(1).png" alt="Vidi Logo" className={cn("w-full h-full object-contain", iconClassName)} />
+    </div>
+  );
+}
 
 function BottomNav({ activeView, setActiveView, onAdd, onAccounts, onCategories, onSettings, onInvoices }: { 
   activeView: string, 
@@ -634,20 +642,20 @@ function AppContent() {
         // Try to use Service Worker for the test notification
         if ("serviceWorker" in navigator) {
           navigator.serviceWorker.ready.then(registration => {
-            registration.showNotification("Tô de Olho", {
+            registration.showNotification("Vidi", {
               body: "As notificações de contas a vencer estão ativas.",
               icon: APP_ICON,
               badge: APP_ICON
             });
           }).catch(() => {
             // Fallback to standard notification
-            new Notification("Tô de Olho", {
+            new Notification("Vidi", {
               body: "As notificações de contas a vencer estão ativas.",
               icon: APP_ICON
             });
           });
         } else {
-          new Notification("Tô de Olho", {
+          new Notification("Vidi", {
             body: "As notificações de contas a vencer estão ativas.",
             icon: APP_ICON
           });
@@ -1734,12 +1742,12 @@ function AppContent() {
           <div className="flex justify-between h-16 items-center">
             <button 
               onClick={() => setActiveView('dashboard')}
-              className="flex items-center gap-1.5 sm:gap-2 hover:opacity-80 transition-opacity active:scale-95"
+              className="flex items-center gap-3 hover:opacity-80 transition-opacity active:scale-95 group"
             >
-              <div className="bg-indigo-600 p-1.5 sm:p-2 rounded-lg">
-                <Eye className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
+              <Logo className="w-8 h-8" />
+              <div className="flex flex-col">
+                <span className="text-xl font-black tracking-tight text-slate-900 dark:text-white leading-tight">Vidi</span>
               </div>
-              <span className="text-lg sm:text-xl font-bold tracking-tight text-indigo-900 dark:text-indigo-400 truncate max-w-[120px] sm:max-w-none">Tô de Olho</span>
             </button>
             
             <div className="flex items-center gap-2 sm:gap-4">
@@ -3164,13 +3172,13 @@ function LoginView({ onLogin }: { onLogin: () => void }) {
       <motion.div 
         initial={{ y: 20, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
-        className="bg-white dark:bg-slate-900 p-8 rounded-3xl shadow-2xl max-w-md w-full text-center relative z-10 border border-white/10"
+        className="bg-white dark:bg-slate-900 p-10 rounded-[2.5rem] shadow-2xl max-w-md w-full text-center relative z-10 border border-white/10"
       >
-        <div className="bg-indigo-100 dark:bg-indigo-900/30 w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-6">
-          <Eye className="w-8 h-8 text-indigo-600 dark:text-indigo-400" />
+        <div className="mb-8">
+          <Logo className="w-20 h-20 mx-auto" iconClassName="w-10 h-10" />
         </div>
-        <h1 className="text-3xl font-bold text-slate-900 dark:text-slate-100 mb-2">Tô de Olho</h1>
-        <p className="text-slate-500 dark:text-slate-400 mb-8">Assuma o controle de sua vida financeira hoje. Simples, seguro e inteligente.</p>
+        <h1 className="text-4xl font-black text-slate-900 dark:text-white mb-2 tracking-tight">Vidi</h1>
+        <p className="text-slate-500 dark:text-slate-400 mb-10 text-lg leading-relaxed">Sua jornada para a liberdade financeira começa com um olhar atento. 👁️💰</p>
         
         <button 
           onClick={onLogin}
