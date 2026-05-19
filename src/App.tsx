@@ -3948,6 +3948,7 @@ function InvoiceView({ transactions, accounts, onEdit, onDelete, categories, for
     return favorite?.id || creditAccounts[0]?.id || '';
   });
   const [monthFilter, setMonthFilter] = useState<string>('all');
+  const [searchTerm, setSearchTerm] = useState<string>('');
 
   useEffect(() => {
     if (!selectedAccountId && creditAccounts.length > 0) {
@@ -3958,11 +3959,22 @@ function InvoiceView({ transactions, accounts, onEdit, onDelete, categories, for
 
   const invoiceTransactions = useMemo(() => {
     if (!selectedAccountId) return [];
-    return transactions.filter(tx => 
+    let filtered = transactions.filter(tx => 
       tx.accountId === selectedAccountId && 
       tx.paymentType === 'credit'
     );
-  }, [transactions, selectedAccountId]);
+
+    if (searchTerm.trim()) {
+      const term = searchTerm.toLowerCase().trim();
+      filtered = filtered.filter(tx => 
+        (tx.description?.toLowerCase().includes(term)) || 
+        (tx.category?.toLowerCase().includes(term)) ||
+        (tx.amount?.toString().includes(term))
+      );
+    }
+
+    return filtered;
+  }, [transactions, selectedAccountId, searchTerm]);
 
   const allMonths = useMemo(() => {
     const months = new Set<string>();
@@ -4024,34 +4036,47 @@ function InvoiceView({ transactions, accounts, onEdit, onDelete, categories, for
           <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Auditoria de Faturas</h2>
           <p className="text-slate-500 dark:text-slate-400 text-sm">Visualize os gastos detalhados por fatura de cartão.</p>
         </div>
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
-          <div className="flex items-center gap-2 px-3 py-2 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
-            <CreditCard className="w-4 h-4 text-slate-400 shrink-0" />
-            <select 
-              value={selectedAccountId}
-              onChange={(e) => setSelectedAccountId(e.target.value)}
-              className="text-sm font-semibold border-none bg-transparent focus:ring-0 p-0 w-full cursor-pointer text-slate-700 dark:text-slate-300"
-            >
-              {creditAccounts.map(acc => (
-                <option key={acc.id} value={acc.id}>{acc.name}</option>
-              ))}
-            </select>
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full lg:w-auto">
+          <div className="relative flex-1 sm:min-w-[240px]">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <input 
+              type="text"
+              placeholder="Buscar na fatura..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-10 pr-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm text-sm outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
+            />
           </div>
 
-          <div className="flex items-center gap-2 px-3 py-2 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
-            <Calendar className="w-4 h-4 text-slate-400 shrink-0" />
-            <select 
-              value={monthFilter}
-              onChange={(e) => setMonthFilter(e.target.value)}
-              className="text-sm font-semibold border-none bg-transparent focus:ring-0 p-0 w-full cursor-pointer text-slate-700 dark:text-slate-300 capitalize"
-            >
-              <option value="all">Todos os Meses</option>
-              {allMonths.map(month => (
-                <option key={month} value={month}>
-                  {format(parseISO(month + '-01'), 'MMMM yyyy', { locale: ptBR })}
-                </option>
-              ))}
-            </select>
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+            <div className="flex items-center gap-2 px-3 py-2 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
+              <CreditCard className="w-4 h-4 text-slate-400 shrink-0" />
+              <select 
+                value={selectedAccountId}
+                onChange={(e) => setSelectedAccountId(e.target.value)}
+                className="text-sm font-semibold border-none bg-transparent focus:ring-0 p-0 w-full cursor-pointer text-slate-700 dark:text-slate-300"
+              >
+                {creditAccounts.map(acc => (
+                  <option key={acc.id} value={acc.id}>{acc.name}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex items-center gap-2 px-3 py-2 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
+              <Calendar className="w-4 h-4 text-slate-400 shrink-0" />
+              <select 
+                value={monthFilter}
+                onChange={(e) => setMonthFilter(e.target.value)}
+                className="text-sm font-semibold border-none bg-transparent focus:ring-0 p-0 w-full cursor-pointer text-slate-700 dark:text-slate-300 capitalize"
+              >
+                <option value="all">Todos os Meses</option>
+                {allMonths.map(month => (
+                  <option key={month} value={month}>
+                    {format(parseISO(month + '-01'), 'MMMM yyyy', { locale: ptBR })}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
         </div>
       </div>
@@ -4721,7 +4746,7 @@ function TransactionForm({ onSubmit, onCancel, categories: allCategories, accoun
 
         {/* Toggles e Opções Extras */}
         <div className="space-y-3">
-          {formData.paymentType !== 'credit' && !formData.isSplit && (
+          {!formData.isSplit && (
             <div className="p-4 bg-slate-50/50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-slate-800 transition-all hover:border-indigo-100 dark:hover:border-indigo-900/30">
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-3">
@@ -4740,12 +4765,12 @@ function TransactionForm({ onSubmit, onCancel, categories: allCategories, accoun
                   type="button"
                   onClick={() => setFormData({ ...formData, isRecurring: !formData.isRecurring })}
                   className={cn(
-                    "w-10 h-5 rounded-full transition-all relative",
+                    "w-12 h-6 rounded-full transition-all relative",
                     formData.isRecurring ? "bg-indigo-600" : "bg-slate-300 dark:bg-slate-700"
                   )}
                 >
                   <div className={cn(
-                    "absolute top-1 w-3 h-3 bg-white rounded-full transition-all shadow-sm",
+                    "absolute top-1 w-4 h-4 bg-white rounded-full transition-all shadow-sm",
                     formData.isRecurring ? "right-1" : "left-1"
                   )} />
                 </button>
