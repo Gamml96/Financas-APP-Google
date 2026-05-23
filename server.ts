@@ -104,6 +104,52 @@ app.post("/api/addExpense", async (req, res) => {
   }
 });
 
+// API Route: /api/addIncome
+app.post("/api/addIncome", async (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  const token = authHeader.split("Bearer ")[1];
+  try {
+    const decodedToken = await auth.verifyIdToken(token);
+    const uid = decodedToken.uid;
+
+    const { amount, description, category, accountId, date } = req.body;
+
+    if (!amount || amount <= 0 || !description || !category || !accountId || !date) {
+      return res.status(400).json({ error: "Missing or invalid fields" });
+    }
+
+    // Verify account ownership
+    const accountDoc = await db.doc(`users/${uid}/accounts/${accountId}`).get();
+    if (!accountDoc.exists) {
+        return res.status(400).json({ error: "Account not found or unauthorized" });
+    }
+
+    const transaction = {
+        uid,
+        amount,
+        type: 'income',
+        description,
+        category,
+        accountId,
+        date: Timestamp.fromDate(new Date(date)),
+        createdAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp()
+    };
+
+    const docRef = await db.collection("transactions").add(transaction);
+
+    res.status(201).json({ success: true, transactionId: docRef.id });
+
+  } catch (error) {
+    console.error("Error processing /api/addIncome:", error);
+    res.status(500).json({ error: "Internal Server Error", details: error instanceof Error ? error.message : String(error) });
+  }
+});
+
 // Vite middleware for development
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {
