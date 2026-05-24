@@ -5,6 +5,10 @@ import { initializeApp, getApps, cert } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
 import { getFirestore, Timestamp, FieldValue } from "firebase-admin/firestore";
 import { startOfDay, addMonths, subDays } from "date-fns";
+import dotenv from "dotenv";
+
+// Load environment variables immediately
+dotenv.config();
 
 // Initialize Firebase Admin
 try {
@@ -22,6 +26,43 @@ app.use(express.json());
 const PORT = 3000;
 const auth = getAuth();
 const db = getFirestore();
+
+// === INÍCIO DA ALTERAÇÃO PARA CHAVE DE API ===
+// Authentication middleware that supports both Firebase ID tokens and direct API keys
+const checkAuth = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+  const apiKey = req.headers["x-api-key"];
+  const authHeader = req.headers.authorization;
+
+  // 1. Check API Key first
+  const apiKeySecret = process.env.API_KEY_SECRET;
+  if (apiKeySecret && apiKey === apiKeySecret) {
+    // API key is valid. Allow the request to proceed.
+    // Try to retrieve target UID from request body or header.
+    const uid = req.body.uid || req.headers["x-uid"];
+    (req as any).uid = uid;
+    (req as any).authMethod = "apikey";
+    return next();
+  }
+
+  // 2. Check Firebase ID Token
+  if (authHeader && authHeader.startsWith("Bearer ")) {
+    const token = authHeader.split("Bearer ")[1];
+    try {
+      const decodedToken = await auth.verifyIdToken(token);
+      (req as any).uid = decodedToken.uid;
+      (req as any).authMethod = "firebase";
+      return next();
+    } catch (error) {
+      console.error("Firebase Auth Token verification failed");
+    }
+  }
+
+  // 3. Unauthorized response
+  return res.status(401).json({
+    error: "Não autorizado. Forneça um token Firebase válido ou uma chave de API no header x-api-key."
+  });
+};
+// === FIM DA ALTERAÇÃO DA CHAVE DE API ===
 
 function calculateDueDate(purchaseDate: Date, closingDay: number, dueDay: number): Date {
   const purchase = startOfDay(purchaseDate);                
@@ -48,16 +89,12 @@ function calculateDueDate(purchaseDate: Date, closingDay: number, dueDay: number
 }
 
 // API Route: /api/addExpense
-app.post("/api/addExpense", async (req, res) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return res.status(401).json({ error: "Unauthorized" });
-  }
-
-  const token = authHeader.split("Bearer ")[1];
+app.post("/api/addExpense", checkAuth, async (req, res) => {
   try {
-    const decodedToken = await auth.verifyIdToken(token);
-    const uid = decodedToken.uid;
+    const uid = (req as any).uid;
+    if (!uid) {
+      return res.status(400).json({ error: "O campo uid é obrigatório para autenticação via chave de API." });
+    }
 
     const { amount, description, category, accountId, date, paymentType, installment, totalInstallments } = req.body;
 
@@ -105,16 +142,12 @@ app.post("/api/addExpense", async (req, res) => {
 });
 
 // API Route: /api/addIncome
-app.post("/api/addIncome", async (req, res) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return res.status(401).json({ error: "Unauthorized" });
-  }
-
-  const token = authHeader.split("Bearer ")[1];
+app.post("/api/addIncome", checkAuth, async (req, res) => {
   try {
-    const decodedToken = await auth.verifyIdToken(token);
-    const uid = decodedToken.uid;
+    const uid = (req as any).uid;
+    if (!uid) {
+      return res.status(400).json({ error: "O campo uid é obrigatório para autenticação via chave de API." });
+    }
 
     const { amount, description, category, accountId, date } = req.body;
 
