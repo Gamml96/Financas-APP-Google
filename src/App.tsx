@@ -288,6 +288,7 @@ interface Account {
   dueDay?: number;
   color: string;
   isFavorite?: boolean;
+  favoritePaymentType?: 'credit' | 'debit';
   createdAt: any;
 }
 
@@ -4129,7 +4130,14 @@ function TransactionForm({ onSubmit, onCancel, categories: allCategories, accoun
   const [formData, setFormData] = useState({
     amount: initialData ? initialData.amount.toString() : '',
     type: initialData ? initialData.type : 'expense' as 'income' | 'expense' | 'transfer',
-    paymentType: initialData ? initialData.paymentType : 'debit' as 'credit' | 'debit',
+    paymentType: initialData ? initialData.paymentType : (() => {
+      const initialAccountId = accounts.find(a => a.isFavorite)?.id || accounts[0]?.id || '';
+      const initialAccount = accounts.find(a => a.id === initialAccountId);
+      if (initialAccount?.favoritePaymentType) {
+        return initialAccount.favoritePaymentType;
+      }
+      return (initialAccount?.type === 'credit' ? 'credit' : 'debit') as 'credit' | 'debit';
+    })(),
     category: initialData ? initialData.category : '',
     description: initialData ? initialData.description : '',
     accountId: initialData ? initialData.accountId : (accounts.find(a => a.isFavorite)?.id || accounts[0]?.id || ''),
@@ -4193,6 +4201,7 @@ function TransactionForm({ onSubmit, onCancel, categories: allCategories, accoun
 
   const selectedAccount = accounts.find(a => a.id === formData.accountId);
   const prevTriggers = useRef({ date: formData.date, accountId: formData.accountId, paymentType: formData.paymentType });
+  const lastSyncAccountIdRef = useRef(formData.accountId);
 
   // Set default category when type changes
   useEffect(() => {
@@ -4207,14 +4216,34 @@ function TransactionForm({ onSubmit, onCancel, categories: allCategories, accoun
     }
   }, [formData.type, categories, formData.category, formData.paymentType]);
 
-  // Sync payment type with account type
+  // Sync payment type with account type / favorite payment type
   useEffect(() => {
-    if (selectedAccount?.type === 'credit' && formData.paymentType !== 'credit') {
-      setFormData(prev => ({ ...prev, paymentType: 'credit' }));
-    } else if (selectedAccount?.type !== 'credit' && selectedAccount?.type !== 'hybrid' && formData.paymentType !== 'debit') {
-      setFormData(prev => ({ ...prev, paymentType: 'debit' }));
+    if (selectedAccount) {
+      const isAccountChanged = lastSyncAccountIdRef.current !== formData.accountId;
+      lastSyncAccountIdRef.current = formData.accountId;
+
+      if (isAccountChanged) {
+        const favType = selectedAccount.favoritePaymentType || (selectedAccount.type === 'credit' ? 'credit' : 'debit');
+        const supportsCredit = selectedAccount.type === 'credit' || selectedAccount.type === 'hybrid' || selectedAccount.favoritePaymentType === 'credit';
+        const supportsDebit = selectedAccount.type !== 'credit';
+
+        if (favType === 'credit' && supportsCredit) {
+          setFormData(prev => ({ ...prev, paymentType: 'credit' }));
+        } else if (favType === 'debit' && supportsDebit) {
+          setFormData(prev => ({ ...prev, paymentType: 'debit' }));
+        }
+      } else {
+        const supportsCredit = selectedAccount.type === 'credit' || selectedAccount.type === 'hybrid' || selectedAccount.favoritePaymentType === 'credit';
+        const supportsDebit = selectedAccount.type !== 'credit';
+
+        if (formData.paymentType === 'credit' && !supportsCredit) {
+          setFormData(prev => ({ ...prev, paymentType: 'debit' }));
+        } else if (formData.paymentType === 'debit' && !supportsDebit) {
+          setFormData(prev => ({ ...prev, paymentType: 'credit' }));
+        }
+      }
     }
-  }, [selectedAccount?.id, selectedAccount?.type]);
+  }, [formData.accountId, selectedAccount?.id, selectedAccount?.type, selectedAccount?.favoritePaymentType, formData.paymentType]);
 
   // Update due date automatically for credit card transactions
   useEffect(() => {
@@ -4495,7 +4524,7 @@ function TransactionForm({ onSubmit, onCancel, categories: allCategories, accoun
                 className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 outline-none text-slate-900 dark:text-slate-100 transition-all"
               >
                 {selectedAccount?.type !== 'credit' && <option value="debit" className="dark:bg-slate-900">Débito / Dinheiro</option>}
-                {(selectedAccount?.type === 'credit' || selectedAccount?.type === 'hybrid') && <option value="credit" className="dark:bg-slate-900">Cartão de Crédito</option>}
+                {(selectedAccount?.type === 'credit' || selectedAccount?.type === 'hybrid' || selectedAccount?.favoritePaymentType === 'credit') && <option value="credit" className="dark:bg-slate-900">Cartão de Crédito</option>}
               </select>
             </div>
           )}
@@ -4897,7 +4926,8 @@ function AccountManager({ accounts, onAdd, onUpdate, onDelete }: { accounts: Acc
     closingDay: '5',
     dueDay: '15',
     color: '#6366f1',
-    isFavorite: false
+    isFavorite: false,
+    favoritePaymentType: 'debit' as 'credit' | 'debit'
   });
 
   const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#8b5cf6', '#06b6d4', '#64748b'];
@@ -4913,7 +4943,8 @@ function AccountManager({ accounts, onAdd, onUpdate, onDelete }: { accounts: Acc
       closingDay: '5', 
       dueDay: '15', 
       color: '#6366f1',
-      isFavorite: false
+      isFavorite: false,
+      favoritePaymentType: 'debit'
     });
   };
 
@@ -4938,7 +4969,14 @@ function AccountManager({ accounts, onAdd, onUpdate, onDelete }: { accounts: Acc
             <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Tipo</label>
             <select
               value={newAcc.type}
-              onChange={(e) => setNewAcc({ ...newAcc, type: e.target.value as any })}
+              onChange={(e) => {
+                const val = e.target.value as any;
+                setNewAcc({ 
+                  ...newAcc, 
+                  type: val,
+                  favoritePaymentType: val === 'credit' ? 'credit' : (val === 'savings' ? 'debit' : 'debit')
+                });
+              }}
               className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500 text-slate-900 dark:text-slate-100"
             >
               <option value="checking" className="dark:bg-slate-900">Corrente</option>
@@ -4948,6 +4986,20 @@ function AccountManager({ accounts, onAdd, onUpdate, onDelete }: { accounts: Acc
             </select>
           </div>
         </div>
+
+        {(newAcc.type === 'checking' || newAcc.type === 'hybrid') && (
+          <div className="mt-4">
+            <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Meio de Pagamento Principal</label>
+            <select
+              value={newAcc.favoritePaymentType}
+              onChange={(e) => setNewAcc({ ...newAcc, favoritePaymentType: e.target.value as 'credit' | 'debit' })}
+              className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500 text-slate-900 dark:text-slate-100"
+            >
+              <option value="debit" className="dark:bg-slate-900">Débito / Dinheiro</option>
+              <option value="credit" className="dark:bg-slate-900">Cartão de Crédito</option>
+            </select>
+          </div>
+        )}
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
           <div>
@@ -4975,7 +5027,7 @@ function AccountManager({ accounts, onAdd, onUpdate, onDelete }: { accounts: Acc
           </div>
         </div>
 
-        {(newAcc.type === 'credit' || newAcc.type === 'hybrid') && (
+        {(newAcc.type === 'credit' || newAcc.type === 'hybrid' || newAcc.favoritePaymentType === 'credit') && (
           <div className="grid grid-cols-2 gap-4 mt-4">
             <div>
               <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Dia de Fechamento</label>
@@ -5049,8 +5101,10 @@ function AccountManager({ accounts, onAdd, onUpdate, onDelete }: { accounts: Acc
           <button
             onClick={() => {
               if (newAcc.name) {
+                const finalFavoritePayment = newAcc.type === 'credit' ? 'credit' : (newAcc.type === 'savings' ? 'debit' : newAcc.favoritePaymentType);
                 const data = {
                   ...newAcc,
+                  favoritePaymentType: finalFavoritePayment,
                   initialBalance: parseFloat(newAcc.initialBalance) || 0,
                   closingDay: parseInt(newAcc.closingDay) || 5,
                   dueDay: parseInt(newAcc.dueDay) || 15,
@@ -5086,12 +5140,23 @@ function AccountManager({ accounts, onAdd, onUpdate, onDelete }: { accounts: Acc
                     <Star className="w-3 h-3 text-amber-500 fill-current" />
                   )}
                 </div>
-                <p className="text-xs text-slate-500 dark:text-slate-400 capitalize">
-                  {acc.type === 'checking' ? 'Corrente' : 
-                   acc.type === 'savings' ? 'Poupança' : 
-                   acc.type === 'credit' ? 'Cartão de Crédito' : 
-                   'Híbrida (Corrente + Cartão)'} 
-                  {(acc.type === 'credit' || acc.type === 'hybrid') && ` (Fechamento: ${acc.closingDay}, Vencimento: ${acc.dueDay})`}
+                <p className="text-xs text-slate-500 dark:text-slate-400 capitalize flex flex-wrap items-center gap-1.5">
+                  <span>
+                    {acc.type === 'checking' ? 'Corrente' : 
+                     acc.type === 'savings' ? 'Poupança' : 
+                     acc.type === 'credit' ? 'Cartão de Crédito' : 
+                     'Híbrida (Corrente + Cartão)'} 
+                  </span>
+                  {(acc.favoritePaymentType || acc.type === 'credit' || acc.type === 'hybrid') && (
+                    <span className="text-indigo-600 dark:text-indigo-400 font-medium font-sans lowercase text-[10px]">
+                      (★ {acc.favoritePaymentType === 'credit' || acc.type === 'credit' ? 'crédito' : 'débito'})
+                    </span>
+                  )}
+                  {(acc.type === 'credit' || acc.type === 'hybrid' || acc.favoritePaymentType === 'credit') && (
+                    <span className="text-[10px] text-slate-400 dark:text-slate-500">
+                      (Fechamento: {acc.closingDay}, Vencimento: {acc.dueDay})
+                    </span>
+                  )}
                 </p>
               </div>
             </div>
@@ -5121,7 +5186,8 @@ function AccountManager({ accounts, onAdd, onUpdate, onDelete }: { accounts: Acc
                     closingDay: (acc.closingDay || 5).toString(),
                     dueDay: (acc.dueDay || 15).toString(),
                     color: acc.color,
-                    isFavorite: acc.isFavorite || false
+                    isFavorite: acc.isFavorite || false,
+                    favoritePaymentType: acc.favoritePaymentType || (acc.type === 'credit' ? 'credit' : 'debit')
                   });
                 }}
                 className="p-2 text-slate-300 dark:text-slate-600 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-lg transition-all"

@@ -28,6 +28,7 @@
         "closingDay": { "type": "integer", "description": "Bill closing day (for credit cards)" },
         "dueDay": { "type": "integer", "description": "Bill due day (for credit cards)" },
         "color": { "type": "string" },
+        "favoritePaymentType": { "type": "string", "enum": ["credit", "debit"], "description": "Default payment type (favorite) for transactions with this account" },
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["userId", "name", "type"]
