@@ -4989,15 +4989,41 @@ function AccountManager({ accounts, onAdd, onUpdate, onDelete }: { accounts: Acc
 
         {(newAcc.type === 'checking' || newAcc.type === 'hybrid') && (
           <div className="mt-4">
-            <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Meio de Pagamento Principal</label>
-            <select
-              value={newAcc.favoritePaymentType}
-              onChange={(e) => setNewAcc({ ...newAcc, favoritePaymentType: e.target.value as 'credit' | 'debit' })}
-              className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500 text-slate-900 dark:text-slate-100"
-            >
-              <option value="debit" className="dark:bg-slate-900">Débito / Dinheiro</option>
-              <option value="credit" className="dark:bg-slate-900">Cartão de Crédito</option>
-            </select>
+            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5 flex items-center gap-1.5">
+              <Star className="w-3.5 h-3.5 text-indigo-500 fill-current" />
+              Meio de Pagamento de Preferência
+            </label>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setNewAcc({ ...newAcc, favoritePaymentType: 'debit' })}
+                className={cn(
+                  "flex items-center justify-center gap-2 px-4 py-3 border rounded-xl text-sm font-semibold transition-all shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/50",
+                  newAcc.favoritePaymentType === 'debit'
+                    ? "bg-indigo-50 dark:bg-indigo-900/40 border-indigo-500 text-indigo-700 dark:text-indigo-300 ring-2 ring-indigo-500/10"
+                    : "bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50"
+                )}
+              >
+                <Wallet className="w-4 h-4 shrink-0" />
+                <span>Débito / Dinheiro</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setNewAcc({ ...newAcc, favoritePaymentType: 'credit' })}
+                className={cn(
+                  "flex items-center justify-center gap-2 px-4 py-3 border rounded-xl text-sm font-semibold transition-all shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/50",
+                  newAcc.favoritePaymentType === 'credit'
+                    ? "bg-indigo-50 dark:bg-indigo-900/40 border-indigo-500 text-indigo-700 dark:text-indigo-300 ring-2 ring-indigo-500/10"
+                    : "bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50"
+                )}
+              >
+                <CreditCard className="w-4 h-4 shrink-0" />
+                <span>Cartão de Crédito</span>
+              </button>
+            </div>
+            <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1.5">
+              Este meio de pagamento será selecionado automaticamente ao lançar transações nesta conta.
+            </p>
           </div>
         )}
 
