@@ -4185,7 +4185,7 @@ function DebitAuditView({ transactions, accounts, onEdit, onDelete, categories, 
   const [selectedAccountId, setSelectedAccountId] = useState<string>('all');
   const [monthFilter, setMonthFilter] = useState<string>('all');
   const [searchTerm, setSearchTerm] = useState<string>('');
-  const [showOnlyExpenses, setShowOnlyExpenses] = useState<boolean>(true);
+  const [typeFilter, setTypeFilter] = useState<'all' | 'expense' | 'income'>('expense');
 
   const debitTransactions = useMemo(() => {
     let filtered = transactions.filter(tx => tx.paymentType === 'debit');
@@ -4194,8 +4194,8 @@ function DebitAuditView({ transactions, accounts, onEdit, onDelete, categories, 
       filtered = filtered.filter(tx => tx.accountId === selectedAccountId);
     }
 
-    if (showOnlyExpenses) {
-      filtered = filtered.filter(tx => tx.type === 'expense');
+    if (typeFilter !== 'all') {
+      filtered = filtered.filter(tx => tx.type === typeFilter);
     }
 
     if (searchTerm.trim()) {
@@ -4208,7 +4208,7 @@ function DebitAuditView({ transactions, accounts, onEdit, onDelete, categories, 
     }
 
     return filtered;
-  }, [transactions, selectedAccountId, showOnlyExpenses, searchTerm]);
+  }, [transactions, selectedAccountId, typeFilter, searchTerm]);
 
   const allMonths = useMemo(() => {
     const months = new Set<string>();
@@ -4262,30 +4262,41 @@ function DebitAuditView({ transactions, accounts, onEdit, onDelete, categories, 
           <p className="text-slate-500 dark:text-slate-400 text-sm">Organize e monitore seus gastos à vista e movimentações em conta corrente e poupança.</p>
         </div>
         
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full lg:w-auto">
+        <div className="flex flex-col sm:flex-row items-center justify-center sm:justify-end gap-3 w-full lg:w-auto">
           {/* Toggle show type */}
-          <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl shrink-0">
+          <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl shrink-0 justify-center items-center">
             <button
-              onClick={() => setShowOnlyExpenses(true)}
+              onClick={() => setTypeFilter('expense')}
               className={cn(
                 "px-3 py-1.5 rounded-lg text-xs font-bold transition-all",
-                showOnlyExpenses 
+                typeFilter === 'expense'
                   ? "bg-white dark:bg-slate-900 text-rose-600 dark:text-rose-400 shadow-sm"
                   : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
               )}
             >
-              Só Despesas
+              Despesas
             </button>
             <button
-              onClick={() => setShowOnlyExpenses(false)}
+              onClick={() => setTypeFilter('income')}
               className={cn(
                 "px-3 py-1.5 rounded-lg text-xs font-bold transition-all",
-                !showOnlyExpenses 
+                typeFilter === 'income'
+                  ? "bg-white dark:bg-slate-900 text-emerald-600 dark:text-emerald-400 shadow-sm"
+                  : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
+              )}
+            >
+              Receitas
+            </button>
+            <button
+              onClick={() => setTypeFilter('all')}
+              className={cn(
+                "px-3 py-1.5 rounded-lg text-xs font-bold transition-all",
+                typeFilter === 'all'
                   ? "bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-sm"
                   : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
               )}
             >
-              Todas
+              Tudo
             </button>
           </div>
 
@@ -4300,7 +4311,7 @@ function DebitAuditView({ transactions, accounts, onEdit, onDelete, categories, 
             />
           </div>
 
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
             <div className="flex items-center gap-2 px-3 py-2 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
               <Wallet className="w-4 h-4 text-slate-400 shrink-0" />
               <select 
@@ -4345,11 +4356,13 @@ function DebitAuditView({ transactions, accounts, onEdit, onDelete, categories, 
                 <div>
                   <span className="text-[10px] text-slate-500 dark:text-slate-400 block uppercase tracking-wider font-bold">Resumo do Mês</span>
                   <div className="flex items-center gap-3 mt-0.5">
-                    <span className="text-sm font-bold text-rose-600 dark:text-rose-450 flex items-center gap-0.5">
-                      <ArrowDownRight className="w-3.5 h-3.5 shrink-0" />
-                      {formatValue(group.totalExpenses)}
-                    </span>
-                    {!showOnlyExpenses && group.totalIncome > 0 && (
+                    {typeFilter !== 'income' && group.totalExpenses > 0 && (
+                      <span className="text-sm font-bold text-rose-600 dark:text-rose-450 flex items-center gap-0.5">
+                        <ArrowDownRight className="w-3.5 h-3.5 shrink-0" />
+                        {formatValue(group.totalExpenses)}
+                      </span>
+                    )}
+                    {typeFilter !== 'expense' && group.totalIncome > 0 && (
                       <span className="text-sm font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-0.5">
                         <ArrowUpRight className="w-3.5 h-3.5 shrink-0" />
                         {formatValue(group.totalIncome)}
