@@ -4188,7 +4188,7 @@ function DebitAuditView({ transactions, accounts, onEdit, onDelete, categories, 
   const [typeFilter, setTypeFilter] = useState<'all' | 'expense' | 'income'>('expense');
 
   const debitTransactions = useMemo(() => {
-    let filtered = transactions.filter(tx => tx.paymentType === 'debit');
+    let filtered = transactions.filter(tx => tx.paymentType === 'debit' && tx.category !== 'Transferência');
 
     if (selectedAccountId !== 'all') {
       filtered = filtered.filter(tx => tx.accountId === selectedAccountId);
