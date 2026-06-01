@@ -4200,7 +4200,15 @@ function TransactionForm({ onSubmit, onCancel, categories: allCategories, accoun
   }, [allCategories, formData.type]);
 
   const selectedAccount = accounts.find(a => a.id === formData.accountId);
-  const prevTriggers = useRef({ date: formData.date, accountId: formData.accountId, paymentType: formData.paymentType });
+  const prevTriggers = useRef(initialData ? {
+    date: formData.date,
+    accountId: formData.accountId,
+    paymentType: formData.paymentType
+  } : {
+    date: '',
+    accountId: '',
+    paymentType: ''
+  });
   const lastSyncAccountIdRef = useRef(formData.accountId);
 
   // Set default category when type changes
