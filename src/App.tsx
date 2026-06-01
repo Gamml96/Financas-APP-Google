@@ -4209,7 +4209,7 @@ function TransactionForm({ onSubmit, onCancel, categories: allCategories, accoun
     accountId: '',
     paymentType: ''
   });
-  const lastSyncAccountIdRef = useRef(formData.accountId);
+  const lastSyncAccountIdRef = useRef(initialData ? formData.accountId : '');
 
   // Set default category when type changes
   useEffect(() => {
@@ -4267,10 +4267,12 @@ function TransactionForm({ onSubmit, onCancel, categories: allCategories, accoun
         paymentType: formData.paymentType 
       };
 
-      if (formData.paymentType === 'credit' && selectedAccount?.closingDay && selectedAccount?.dueDay && formData.date) {
+      if (formData.paymentType === 'credit' && selectedAccount && formData.date) {
+        const closingDay = selectedAccount.closingDay || 5;
+        const dueDay = selectedAccount.dueDay || 15;
         const dateObj = new Date(formData.date + 'T12:00:00');
         if (!isNaN(dateObj.getTime())) {
-          const calculated = calculateDueDate(dateObj, selectedAccount.closingDay, selectedAccount.dueDay);
+          const calculated = calculateDueDate(dateObj, closingDay, dueDay);
           const formattedCalculated = format(calculated, 'yyyy-MM-dd');
           
           if (formData.dueDate !== formattedCalculated) {
