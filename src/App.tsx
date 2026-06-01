@@ -4256,92 +4256,93 @@ function DebitAuditView({ transactions, accounts, onEdit, onDelete, categories, 
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div>
-          <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Auditoria de Débito</h2>
-          <p className="text-slate-500 dark:text-slate-400 text-sm">Organize e monitore seus gastos à vista e movimentações em conta corrente e poupança.</p>
+      {/* Title Header */}
+      <div>
+        <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Auditoria de Débito</h2>
+        <p className="text-slate-500 dark:text-slate-400 text-sm">Organize e monitore seus gastos à vista e movimentações em conta corrente e poupança.</p>
+      </div>
+
+      {/* Responsive Filters Bar Grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 bg-slate-50/40 dark:bg-slate-850/20 p-3 sm:p-4 rounded-2xl border border-slate-200 dark:border-slate-800">
+        {/* Type Filter Buttons Group */}
+        <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl h-10 shrink-0">
+          <button
+            onClick={() => setTypeFilter('expense')}
+            className={cn(
+              "flex-1 text-xs font-bold rounded-lg transition-all",
+              typeFilter === 'expense'
+                ? "bg-white dark:bg-slate-900 text-rose-600 dark:text-rose-450 shadow-sm"
+                : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
+            )}
+          >
+            Despesas
+          </button>
+          <button
+            onClick={() => setTypeFilter('income')}
+            className={cn(
+              "flex-1 text-xs font-bold rounded-lg transition-all",
+              typeFilter === 'income'
+                ? "bg-white dark:bg-slate-900 text-emerald-600 dark:text-emerald-400 shadow-sm"
+                : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
+            )}
+          >
+            Receitas
+          </button>
+          <button
+            onClick={() => setTypeFilter('all')}
+            className={cn(
+              "flex-1 text-xs font-bold rounded-lg transition-all",
+              typeFilter === 'all'
+                ? "bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-sm"
+                : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
+            )}
+          >
+            Tudo
+          </button>
         </div>
-        
-        <div className="flex flex-col sm:flex-row items-center justify-center sm:justify-end gap-3 w-full lg:w-auto">
-          {/* Toggle show type */}
-          <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl shrink-0 justify-center items-center">
-            <button
-              onClick={() => setTypeFilter('expense')}
-              className={cn(
-                "px-3 py-1.5 rounded-lg text-xs font-bold transition-all",
-                typeFilter === 'expense'
-                  ? "bg-white dark:bg-slate-900 text-rose-600 dark:text-rose-400 shadow-sm"
-                  : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
-              )}
-            >
-              Despesas
-            </button>
-            <button
-              onClick={() => setTypeFilter('income')}
-              className={cn(
-                "px-3 py-1.5 rounded-lg text-xs font-bold transition-all",
-                typeFilter === 'income'
-                  ? "bg-white dark:bg-slate-900 text-emerald-600 dark:text-emerald-400 shadow-sm"
-                  : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
-              )}
-            >
-              Receitas
-            </button>
-            <button
-              onClick={() => setTypeFilter('all')}
-              className={cn(
-                "px-3 py-1.5 rounded-lg text-xs font-bold transition-all",
-                typeFilter === 'all'
-                  ? "bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-sm"
-                  : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
-              )}
-            >
-              Tudo
-            </button>
-          </div>
 
-          <div className="relative flex-1 sm:min-w-[200px]">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-            <input 
-              type="text"
-              placeholder="Buscar no débito..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm text-sm outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
-            />
-          </div>
+        {/* Search Input */}
+        <div className="relative h-10">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+          <input 
+            type="text"
+            placeholder="Buscar no débito..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full h-full pl-10 pr-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm text-xs outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all text-slate-700 dark:text-slate-300"
+          />
+        </div>
 
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
-            <div className="flex items-center gap-2 px-3 py-2 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
-              <Wallet className="w-4 h-4 text-slate-400 shrink-0" />
-              <select 
-                value={selectedAccountId}
-                onChange={(e) => setSelectedAccountId(e.target.value)}
-                className="text-sm font-semibold border-none bg-transparent focus:ring-0 p-0 w-full cursor-pointer text-slate-700 dark:text-slate-300"
-              >
-                <option value="all">Todas as Contas</option>
-                {debitAccounts.map(acc => (
-                  <option key={acc.id} value={acc.id}>{acc.name}</option>
-                ))}
-              </select>
-            </div>
+        {/* Account Dropdown */}
+        <div className="flex items-center gap-2 px-3 h-10 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
+          <Wallet className="w-4 h-4 text-slate-400 shrink-0" />
+          <select 
+            value={selectedAccountId}
+            onChange={(e) => setSelectedAccountId(e.target.value)}
+            className="text-xs font-semibold border-none bg-transparent focus:ring-0 p-0 w-full cursor-pointer text-slate-700 dark:text-slate-300 outline-none"
+          >
+            <option value="all">Todas as Contas</option>
+            {debitAccounts.map(acc => (
+              <option key={acc.id} value={acc.id}>{acc.name}</option>
+            ))}
+          </select>
+        </div>
 
-            <div className="flex items-center gap-2 px-3 py-2 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
-              <Calendar className="w-4 h-4 text-slate-400 shrink-0" />
-              <select 
-                value={monthFilter}
-                onChange={(e) => setMonthFilter(e.target.value)}
-                className="text-sm font-semibold border-none bg-transparent focus:ring-0 p-0 w-full cursor-pointer text-slate-700 dark:text-slate-300 capitalize"
-              >
-                <option value="all">Todos os Meses</option>
-                {allMonths.map(month => (
-                  <option key={month} value={month}>
-                    {format(parseISO(month + '-01'), 'MMMM yyyy', { locale: ptBR })}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
+        {/* Month Dropdown */}
+        <div className="flex items-center gap-2 px-3 h-10 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
+          <Calendar className="w-4 h-4 text-slate-400 shrink-0" />
+          <select 
+            value={monthFilter}
+            onChange={(e) => setMonthFilter(e.target.value)}
+            className="text-xs font-semibold border-none bg-transparent focus:ring-0 p-0 w-full cursor-pointer text-slate-700 dark:text-slate-300 capitalize outline-none"
+          >
+            <option value="all">Todos os Meses</option>
+            {allMonths.map(month => (
+              <option key={month} value={month}>
+                {format(parseISO(month + '-01'), 'MMMM yyyy', { locale: ptBR })}
+              </option>
+            ))}
+          </select>
         </div>
       </div>
 
