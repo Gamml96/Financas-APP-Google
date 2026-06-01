@@ -419,11 +419,11 @@ function BottomNav({ activeView, setActiveView, onAdd, onAccounts, onCategories,
         onClick={onInvoices}
         className={cn(
           "flex flex-col items-center gap-1 flex-1 transition-colors",
-          activeView === 'invoices' ? "text-indigo-600" : "text-slate-400 dark:text-slate-500"
+          (activeView === 'invoices' || activeView === 'debit_audit') ? "text-indigo-600" : "text-slate-400 dark:text-slate-500"
         )}
       >
         <FileText className="w-5 h-5" />
-        <span className="text-[9px] font-bold">Faturas</span>
+        <span className="text-[9px] font-bold">Auditorias</span>
       </button>
 
       <div className="flex-1 flex justify-center">
@@ -477,7 +477,7 @@ function AppContent() {
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [showNotificationCenter, setShowNotificationCenter] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
-  const [activeView, setActiveView] = useState<'dashboard' | 'invoices'>('dashboard');
+  const [activeView, setActiveView] = useState<'dashboard' | 'invoices' | 'debit_audit'>('dashboard');
   const [listMode, setListMode] = useState<'detailed' | 'compact'>('compact');
   const [filterMonth, setFilterMonth] = useState(new Date());
   const [dateRange, setDateRange] = useState<{ start: string; end: string } | null>(null);
@@ -1809,11 +1809,21 @@ function AppContent() {
                 onClick={() => setActiveView('invoices')}
                 className={cn(
                   "hidden md:flex items-center gap-2 px-3 py-2 rounded-lg transition-colors",
-                  activeView === 'invoices' ? "text-indigo-600 bg-indigo-50" : "text-slate-600 hover:text-indigo-600 hover:bg-slate-50"
+                  activeView === 'invoices' ? "text-indigo-600 bg-indigo-50 dark:bg-indigo-900/20" : "text-slate-600 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-50 dark:hover:bg-slate-800"
                 )}
               >
                 <CreditCard className="w-4 h-4" />
                 <span className="text-sm font-medium">Faturas</span>
+              </button>
+              <button 
+                onClick={() => setActiveView('debit_audit')}
+                className={cn(
+                  "hidden md:flex items-center gap-2 px-3 py-2 rounded-lg transition-colors",
+                  activeView === 'debit_audit' ? "text-indigo-600 bg-indigo-50 dark:bg-indigo-900/20" : "text-slate-600 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-50 dark:hover:bg-slate-800"
+                )}
+              >
+                <Wallet className="w-4 h-4" />
+                <span className="text-sm font-medium">Débito</span>
               </button>
               <button 
                 onClick={() => setShowAccountModal(true)}
@@ -2547,14 +2557,55 @@ function AppContent() {
         </div>
       </>
     ) : (
-      <InvoiceView 
-        transactions={transactions} 
-        accounts={accounts} 
-        onEdit={setEditingTransaction} 
-        onDelete={handleDeleteTransaction}
-        categories={allCategories}
-        formatValue={formatCurrency}
-      />
+      <div className="space-y-6">
+        {/* Sub-tabs for Credit vs Debit Auditor */}
+        <div className="flex border-b border-slate-200 dark:border-slate-800">
+          <button
+            onClick={() => setActiveView('invoices')}
+            className={cn(
+              "px-4 py-2 border-b-2 font-bold text-sm transition-all pb-3 flex items-center gap-2",
+              activeView === 'invoices'
+                ? "border-indigo-600 text-indigo-600 dark:text-indigo-400 border-b-indigo-600 dark:border-b-indigo-400"
+                : "border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
+            )}
+          >
+            <CreditCard className="w-4 h-4" />
+            <span>Auditoria de Faturas</span>
+          </button>
+          <button
+            onClick={() => setActiveView('debit_audit')}
+            className={cn(
+              "px-4 py-2 border-b-2 font-bold text-sm transition-all pb-3 flex items-center gap-2",
+              activeView === 'debit_audit'
+                ? "border-indigo-600 text-indigo-600 dark:text-indigo-400 border-b-indigo-600 dark:border-b-indigo-400"
+                : "border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
+            )}
+          >
+            <Wallet className="w-4 h-4" />
+            <span>Auditoria de Débito</span>
+          </button>
+        </div>
+
+        {activeView === 'invoices' ? (
+          <InvoiceView 
+            transactions={transactions} 
+            accounts={accounts} 
+            onEdit={setEditingTransaction} 
+            onDelete={handleDeleteTransaction}
+            categories={allCategories}
+            formatValue={formatCurrency}
+          />
+        ) : (
+          <DebitAuditView 
+            transactions={transactions} 
+            accounts={accounts} 
+            onEdit={setEditingTransaction} 
+            onDelete={handleDeleteTransaction}
+            categories={allCategories}
+            formatValue={formatCurrency}
+          />
+        )}
+      </div>
     )}
   </main>
 
@@ -4115,6 +4166,218 @@ function InvoiceView({ transactions, accounts, onEdit, onDelete, categories, for
           <div className="text-center py-12 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800">
             <Search className="w-12 h-12 text-slate-300 mx-auto mb-4" />
             <p className="text-slate-500 dark:text-slate-400">Nenhuma transação encontrada para este cartão.</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function DebitAuditView({ transactions, accounts, onEdit, onDelete, categories, formatValue }: { 
+  transactions: Transaction[], 
+  accounts: Account[], 
+  onEdit: (tx: Transaction) => void, 
+  onDelete: (id: string) => void,
+  categories: Category[],
+  formatValue: (v: number) => string
+}) {
+  const debitAccounts = accounts.filter(acc => acc.type !== 'credit');
+  const [selectedAccountId, setSelectedAccountId] = useState<string>('all');
+  const [monthFilter, setMonthFilter] = useState<string>('all');
+  const [searchTerm, setSearchTerm] = useState<string>('');
+  const [showOnlyExpenses, setShowOnlyExpenses] = useState<boolean>(true);
+
+  const debitTransactions = useMemo(() => {
+    let filtered = transactions.filter(tx => tx.paymentType === 'debit');
+
+    if (selectedAccountId !== 'all') {
+      filtered = filtered.filter(tx => tx.accountId === selectedAccountId);
+    }
+
+    if (showOnlyExpenses) {
+      filtered = filtered.filter(tx => tx.type === 'expense');
+    }
+
+    if (searchTerm.trim()) {
+      const term = searchTerm.toLowerCase().trim();
+      filtered = filtered.filter(tx => 
+        (tx.description?.toLowerCase().includes(term)) || 
+        (tx.category?.toLowerCase().includes(term)) ||
+        (tx.amount?.toString().includes(term))
+      );
+    }
+
+    return filtered;
+  }, [transactions, selectedAccountId, showOnlyExpenses, searchTerm]);
+
+  const allMonths = useMemo(() => {
+    const months = new Set<string>();
+    debitTransactions.forEach(tx => {
+      const dateToUse = tx.date;
+      const date = dateToUse instanceof Timestamp ? dateToUse.toDate() : new Date(dateToUse);
+      if (!isNaN(date.getTime())) {
+        months.add(format(date, 'yyyy-MM'));
+      }
+    });
+    return Array.from(months).sort((a, b) => b.localeCompare(a));
+  }, [debitTransactions]);
+
+  const monthlyDebits = useMemo(() => {
+    const grouped: Record<string, Transaction[]> = {};
+    debitTransactions.forEach(tx => {
+      const dateToUse = tx.date;
+      const date = dateToUse instanceof Timestamp ? dateToUse.toDate() : new Date(dateToUse);
+      if (isNaN(date.getTime())) return;
+      const key = format(date, 'yyyy-MM');
+      
+      if (monthFilter !== 'all' && key !== monthFilter) return;
+
+      if (!grouped[key]) grouped[key] = [];
+      grouped[key].push(tx);
+    });
+
+    return Object.entries(grouped)
+      .sort((a, b) => b[0].localeCompare(a[0]))
+      .map(([key, txs]) => ({
+        month: key,
+        transactions: txs.sort((a, b) => {
+          const dateA = a.date instanceof Timestamp ? a.date.toDate() : new Date(a.date);
+          const dateB = b.date instanceof Timestamp ? b.date.toDate() : new Date(b.date);
+          return dateB.getTime() - dateA.getTime();
+        }),
+        totalExpenses: txs.reduce((sum, tx) => {
+          return sum + (tx.type === 'expense' ? Number(tx.amount) : 0);
+        }, 0),
+        totalIncome: txs.reduce((sum, tx) => {
+          return sum + (tx.type === 'income' ? Number(tx.amount) : 0);
+        }, 0)
+      }));
+  }, [debitTransactions, monthFilter]);
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div>
+          <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Auditoria de Débito</h2>
+          <p className="text-slate-500 dark:text-slate-400 text-sm">Organize e monitore seus gastos à vista e movimentações em conta corrente e poupança.</p>
+        </div>
+        
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full lg:w-auto">
+          {/* Toggle show type */}
+          <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl shrink-0">
+            <button
+              onClick={() => setShowOnlyExpenses(true)}
+              className={cn(
+                "px-3 py-1.5 rounded-lg text-xs font-bold transition-all",
+                showOnlyExpenses 
+                  ? "bg-white dark:bg-slate-900 text-rose-600 dark:text-rose-400 shadow-sm"
+                  : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
+              )}
+            >
+              Só Despesas
+            </button>
+            <button
+              onClick={() => setShowOnlyExpenses(false)}
+              className={cn(
+                "px-3 py-1.5 rounded-lg text-xs font-bold transition-all",
+                !showOnlyExpenses 
+                  ? "bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-sm"
+                  : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
+              )}
+            >
+              Todas
+            </button>
+          </div>
+
+          <div className="relative flex-1 sm:min-w-[200px]">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <input 
+              type="text"
+              placeholder="Buscar no débito..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-10 pr-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm text-sm outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
+            />
+          </div>
+
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+            <div className="flex items-center gap-2 px-3 py-2 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
+              <Wallet className="w-4 h-4 text-slate-400 shrink-0" />
+              <select 
+                value={selectedAccountId}
+                onChange={(e) => setSelectedAccountId(e.target.value)}
+                className="text-sm font-semibold border-none bg-transparent focus:ring-0 p-0 w-full cursor-pointer text-slate-700 dark:text-slate-300"
+              >
+                <option value="all">Todas as Contas</option>
+                {debitAccounts.map(acc => (
+                  <option key={acc.id} value={acc.id}>{acc.name}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex items-center gap-2 px-3 py-2 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
+              <Calendar className="w-4 h-4 text-slate-400 shrink-0" />
+              <select 
+                value={monthFilter}
+                onChange={(e) => setMonthFilter(e.target.value)}
+                className="text-sm font-semibold border-none bg-transparent focus:ring-0 p-0 w-full cursor-pointer text-slate-700 dark:text-slate-300 capitalize"
+              >
+                <option value="all">Todos os Meses</option>
+                {allMonths.map(month => (
+                  <option key={month} value={month}>
+                    {format(parseISO(month + '-01'), 'MMMM yyyy', { locale: ptBR })}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-6">
+        {monthlyDebits.map(group => (
+          <div key={group.month} className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+            <div className="bg-slate-50 dark:bg-slate-800/50 px-4 sm:px-6 py-3.5 sm:py-4 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center flex-wrap gap-2">
+              <h3 className="font-bold text-slate-900 dark:text-slate-100 capitalize">
+                {format(parseISO(group.month + '-01'), 'MMMM yyyy', { locale: ptBR })}
+              </h3>
+              <div className="flex items-center gap-4 sm:gap-6">
+                <div>
+                  <span className="text-[10px] text-slate-500 dark:text-slate-400 block uppercase tracking-wider font-bold">Resumo do Mês</span>
+                  <div className="flex items-center gap-3 mt-0.5">
+                    <span className="text-sm font-bold text-rose-600 dark:text-rose-450 flex items-center gap-0.5">
+                      <ArrowDownRight className="w-3.5 h-3.5 shrink-0" />
+                      {formatValue(group.totalExpenses)}
+                    </span>
+                    {!showOnlyExpenses && group.totalIncome > 0 && (
+                      <span className="text-sm font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-0.5">
+                        <ArrowUpRight className="w-3.5 h-3.5 shrink-0" />
+                        {formatValue(group.totalIncome)}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="divide-y divide-slate-100 dark:divide-slate-800">
+              {group.transactions.map(tx => (
+                <TransactionItem 
+                  key={tx.id} 
+                  tx={tx} 
+                  categories={categories}
+                  accounts={accounts}
+                  onEdit={onEdit} 
+                  onDelete={onDelete} 
+                  formatValue={formatValue}
+                />
+              ))}
+            </div>
+          </div>
+        ))}
+        {monthlyDebits.length === 0 && (
+          <div className="text-center py-12 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800">
+            <Search className="w-12 h-12 text-slate-300 mx-auto mb-4" />
+            <p className="text-slate-500 dark:text-slate-400">Nenhuma movimentação no débito encontrada.</p>
           </div>
         )}
       </div>
