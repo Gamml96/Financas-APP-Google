@@ -174,6 +174,38 @@ function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+// Safe localStorage wrapper to prevent SecurityError inside restricted iframes
+const safeStorage = {
+  getItem: (key: string): string | null => {
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        return window.localStorage.getItem(key);
+      }
+    } catch (e) {
+      console.warn("Storage access denied:", e);
+    }
+    return null;
+  },
+  setItem: (key: string, value: string): void => {
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        window.localStorage.setItem(key, value);
+      }
+    } catch (e) {
+      console.warn("Storage write denied:", e);
+    }
+  },
+  removeItem: (key: string): void => {
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        window.localStorage.removeItem(key);
+      }
+    } catch (e) {
+      console.warn("Storage remove denied:", e);
+    }
+  }
+};
+
 const APP_ICON = "https://i.postimg.cc/FsxNpV4m/Gemini-Generated-Image-h73zf3h73zf3h73z-(1).png";
 const ADMIN_EMAIL = "gamml1996@gmail.com";
 
@@ -511,13 +543,13 @@ function AppContent() {
   }, []);
   const [isPrivateMode, setIsPrivateMode] = useState(() => {
     if (typeof window !== 'undefined') {
-      return localStorage.getItem('isPrivateMode') === 'true';
+      return safeStorage.getItem('isPrivateMode') === 'true';
     }
     return false;
   });
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     if (typeof window !== 'undefined') {
-      return (localStorage.getItem('theme') as 'light' | 'dark') || 'light';
+      return (safeStorage.getItem('theme') as 'light' | 'dark') || 'light';
     }
     return 'light';
   });
@@ -530,7 +562,7 @@ function AppContent() {
     } else {
       root.classList.remove('dark');
     }
-    localStorage.setItem('theme', theme);
+    safeStorage.setItem('theme', theme);
   }, [theme]);
 
   const toggleTheme = () => {
@@ -540,7 +572,7 @@ function AppContent() {
   const togglePrivateMode = () => {
     setIsPrivateMode(prev => {
       const newVal = !prev;
-      localStorage.setItem('isPrivateMode', String(newVal));
+      safeStorage.setItem('isPrivateMode', String(newVal));
       return newVal;
     });
   };
@@ -711,7 +743,7 @@ function AppContent() {
       const storageKey = `notified_summary_${user.uid}_${format(now, 'yyyy-MM-dd')}`;
       
       // If we already notified today about these exact bills, skip
-      if (localStorage.getItem(storageKey) === billsKey) return;
+      if (safeStorage.getItem(storageKey) === billsKey) return;
 
       const totalAmount = upcomingBills.reduce((sum, tx) => sum + (Number(tx.amount) || 0), 0);
       const title = upcomingBills.length === 1 ? "Conta a vencer em breve!" : "Contas a vencer em breve!";
@@ -737,7 +769,7 @@ function AppContent() {
             tag: 'upcoming_bills_summary'
           });
         }
-        localStorage.setItem(storageKey, billsKey);
+        safeStorage.setItem(storageKey, billsKey);
       } catch (e) {
         console.warn("Falha ao enviar notificação nativa:", e);
       }
