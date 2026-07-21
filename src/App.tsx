@@ -3234,6 +3234,17 @@ function AppContent() {
 
 // Sub-components
 function LoginView({ onLogin }: { onLogin: () => void }) {
+  const [error, setError] = React.useState<string | null>(null);
+
+  const handleLogin = async () => {
+    setError(null);
+    try {
+      await onLogin();
+    } catch (e: any) {
+      setError(e.message || 'Erro ao logar com o Google');
+    }
+  };
+
   return (
     <div className="min-h-screen bg-indigo-600 dark:bg-slate-950 flex flex-col items-center justify-center p-4 relative overflow-hidden">
       <div className="absolute top-0 left-0 w-full h-full opacity-10 pointer-events-none">
@@ -3252,8 +3263,14 @@ function LoginView({ onLogin }: { onLogin: () => void }) {
         <h1 className="text-4xl font-black text-slate-900 dark:text-white mb-2 tracking-tight">Vidi</h1>
         <p className="text-slate-500 dark:text-slate-400 mb-10 text-lg leading-relaxed">Sua jornada para a liberdade financeira começa com um olhar atento. 👁️💰</p>
         
+        {error && (
+          <div className="mb-4 p-4 bg-red-100 text-red-700 rounded-xl text-sm">
+            {error}
+          </div>
+        )}
+
         <button 
-          onClick={onLogin}
+          onClick={handleLogin}
           className="w-full flex items-center justify-center gap-3 bg-white dark:bg-slate-800 border-2 border-slate-100 dark:border-slate-700 py-3 rounded-xl font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 hover:border-indigo-100 dark:hover:border-indigo-900 transition-all"
         >
           <img src="https://www.google.com/favicon.ico" className="w-5 h-5" alt="Google" referrerPolicy="no-referrer" />
