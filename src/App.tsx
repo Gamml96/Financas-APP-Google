@@ -793,7 +793,11 @@ function AppContent() {
       })) as Transaction[];
       setTransactions(txs);
     }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, 'transactions');
+      try {
+        handleFirestoreError(error, OperationType.LIST, 'transactions');
+      } catch (e) {
+        console.error(e);
+      }
     });
 
     return () => unsubscribe();
@@ -820,7 +824,11 @@ function AppContent() {
         });
       }
     }, (error) => {
-      handleFirestoreError(error, OperationType.GET, `users/${user.uid}`);
+      try {
+        handleFirestoreError(error, OperationType.GET, `users/${user.uid}`);
+      } catch (e) {
+        console.error(e);
+      }
     });
 
     return () => unsubscribe();
@@ -842,7 +850,11 @@ function AppContent() {
       })) as Budget[];
       setBudgets(bgs);
     }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, 'budgets');
+      try {
+        handleFirestoreError(error, OperationType.LIST, 'budgets');
+      } catch (e) {
+        console.error(e);
+      }
     });
 
     return () => unsubscribe();
@@ -865,7 +877,11 @@ function AppContent() {
       })) as Account[];
       setAccounts(accs);
     }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, 'accounts');
+      try {
+        handleFirestoreError(error, OperationType.LIST, 'accounts');
+      } catch (e) {
+        console.error(e);
+      }
     });
 
     return () => unsubscribe();
@@ -887,7 +903,11 @@ function AppContent() {
       })) as Category[];
       setCustomCategories(cats);
     }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, 'categories');
+      try {
+        handleFirestoreError(error, OperationType.LIST, 'categories');
+      } catch (e) {
+        console.error(e);
+      }
     });
 
     return () => unsubscribe();
