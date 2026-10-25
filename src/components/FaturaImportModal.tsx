@@ -65,7 +65,11 @@ export default function FaturaImportModal({ onClose, onImport, isTestMode = fals
       setStep('preview');
     } catch (err: any) {
       const msg = err?.message || String(err);
-      setError(msg);
+      // Mensagem amigável para erros temporários do Gemini (503, 429, etc.)
+      const friendly = msg.includes('Todos os modelos de fallback falharam')
+        ? 'O Gemini está temporariamente com alta demanda. O app tentou 4 modelos diferentes com retries. Tente novamente em alguns minutos.'
+        : msg;
+      setError(friendly);
       setStep('error');
     }
   };

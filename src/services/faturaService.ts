@@ -7,6 +7,81 @@ const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
 
 const GEMINI_MODEL = 'gemini-3.8-flash';
 
+/** Modelos em ordem de preferência para fallback em caso de sobrecarga */
+const FALLBACK_MODELS = [
+  'gemini-3.8-flash',
+  'gemini-3.5-flash',
+  'gemini-2.5-flash',
+  'gemini-flash-latest',
+  'gemini-2.5-flash-lite',
+];
+
+/** Número máximo de tentativas por modelo */
+const MAX_RETRIES = 3;
+
+/** Tempo inicial de espera entre retries (ms) */
+const RETRY_BASE_MS = 2000;
+
+/** Verifica se o erro do Gemini é temporário (503, 429, 500, etc.) */
+function isRetryableError(error: any): boolean {
+  const message = (error?.message || '').toLowerCase();
+  const status = error?.status || error?.code;
+  return (
+    status === 503 ||
+    status === 429 ||
+    status === 500 ||
+    status === 502 ||
+    message.includes('unavailable') ||
+    message.includes('overloaded') ||
+    message.includes('high demand') ||
+    message.includes('rate limit') ||
+    message.includes('temporarily')
+  );
+}
+
+/** Espera X ms usando setTimeout */
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Tenta chamar o Gemini com retry e fallback entre modelos */
+async function callGeminiWithFallback(
+  contents: any,
+  config: any
+): Promise<any> {
+  let lastError: any = null;
+
+  for (const model of FALLBACK_MODELS) {
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
+        const response = await ai.models.generateContent({
+          model,
+          contents,
+          config,
+        });
+        return response;
+      } catch (error: any) {
+        lastError = error;
+        if (isRetryableError(error)) {
+          const waitMs = RETRY_BASE_MS * Math.pow(2, attempt - 1);
+          console.warn(
+            `[Gemini] Tentativa ${attempt}/${MAX_RETRIES} com ${model} falhou (${error?.status || error?.message}). ` +
+              `Aguardando ${waitMs}ms antes de tentar novamente...`
+          );
+          await sleep(waitMs);
+          continue;
+        }
+        // Erro não temporário — para de tentar este modelo
+        console.warn(`[Gemini] Erro não temporário com ${model}: ${error?.message}`);
+        break;
+      }
+    }
+  }
+
+  throw lastError || new Error('Todos os modelos de fallback falharam.');
+}
+
 export interface FaturaTransaction {
   /** Data do lançamento no formato YYYY-MM-DD */
   date: string;
@@ -35,8 +110,16 @@ export interface FaturaResult {
 
 /**
  * Converte um File (PDF) para base64 string.
+ * Funciona tanto em navegador (FileReader) quanto em Node.js (Buffer).
  */
 export async function fileToBase64(file: File): Promise<string> {
+  // Node.js: usa Buffer
+  if (typeof FileReader === 'undefined') {
+    const arrayBuffer = await file.arrayBuffer();
+    return Buffer.from(arrayBuffer).toString('base64');
+  }
+
+  // Navegador: usa FileReader
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => {
@@ -142,6 +225,7 @@ export function computeNetTotal(transactions: FaturaTransaction[]): number {
 
 /**
  * Extrai lançamentos de uma fatura de cartão de crédito em PDF usando o Gemini.
+ * Usa retry com backoff exponencial e fallback entre modelos em caso de sobrecarga.
  */
 export async function extractFaturaFromPdf(file: File): Promise<FaturaResult> {
   if (!GEMINI_API_KEY) {
@@ -150,58 +234,58 @@ export async function extractFaturaFromPdf(file: File): Promise<FaturaResult> {
 
   const base64Data = await fileToBase64(file);
 
-  const response = await ai.models.generateContent({
-    model: GEMINI_MODEL,
-    contents: [
-      {
-        role: 'user',
-        parts: [
-          { text: 'Extraia todos os lançamentos desta fatura de cartão de crédito aplicando as regras de net calculation, categorização e parcelamento.' },
-          {
-            inlineData: {
-              data: base64Data,
-              mimeType: 'application/pdf',
-            },
-          },
-        ],
-      },
-    ],
-    config: {
-      systemInstruction: SYSTEM_INSTRUCTION,
-      temperature: 0.1,
-      responseMimeType: 'application/json',
-      responseSchema: {
-        type: Type.OBJECT,
-        properties: {
-          bankName: { type: Type.STRING },
-          statementPeriodStart: { type: Type.STRING },
-          statementPeriodEnd: { type: Type.STRING },
-          totalInvoiceAmount: { type: Type.NUMBER },
-          transactions: {
-            type: Type.ARRAY,
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                date: { type: Type.STRING },
-                description: { type: Type.STRING },
-                amount: { type: Type.NUMBER },
-                category: { type: Type.STRING },
-                type: { type: Type.STRING, enum: ['purchase', 'fee', 'refund'] },
-                installmentNumber: { type: Type.INTEGER },
-                installmentTotal: { type: Type.INTEGER },
-              },
-              required: ['date', 'description', 'amount', 'category'],
-            },
-          },
-          warnings: {
-            type: Type.ARRAY,
-            items: { type: Type.STRING },
+  const contents = [
+    {
+      role: 'user',
+      parts: [
+        { text: 'Extraia todos os lançamentos desta fatura de cartão de crédito aplicando as regras de net calculation, categorização e parcelamento.' },
+        {
+          inlineData: {
+            data: base64Data,
+            mimeType: 'application/pdf',
           },
         },
-        required: ['bankName', 'transactions'],
-      },
+      ],
     },
-  });
+  ];
+
+  const config = {
+    systemInstruction: SYSTEM_INSTRUCTION,
+    temperature: 0.1,
+    responseMimeType: 'application/json',
+    responseSchema: {
+      type: Type.OBJECT,
+      properties: {
+        bankName: { type: Type.STRING },
+        statementPeriodStart: { type: Type.STRING },
+        statementPeriodEnd: { type: Type.STRING },
+        totalInvoiceAmount: { type: Type.NUMBER },
+        transactions: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              date: { type: Type.STRING },
+              description: { type: Type.STRING },
+              amount: { type: Type.NUMBER },
+              category: { type: Type.STRING },
+              type: { type: Type.STRING, enum: ['purchase', 'fee', 'refund'] },
+              installmentNumber: { type: Type.INTEGER },
+              installmentTotal: { type: Type.INTEGER },
+            },
+            required: ['date', 'description', 'amount', 'category'],
+          },
+        },
+        warnings: {
+          type: Type.ARRAY,
+          items: { type: Type.STRING },
+        },
+      },
+      required: ['bankName', 'transactions'],
+    },
+  };
+
+  const response = await callGeminiWithFallback(contents, config);
 
   const text = response.text;
   if (!text) {
