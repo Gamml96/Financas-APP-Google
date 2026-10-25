@@ -6,3 +6,8 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Arquivos de teste com dados sensíveis
+fatura.pdf
+fatura*.pdf
+*.test.pdf
