@@ -36,7 +36,7 @@ import {
   TrendingDown, 
   Wallet, 
   Plus, 
-  Trash2, 
+  Trash2,
   Edit,
   Filter, 
   PieChart as PieChartIcon,
@@ -144,7 +144,9 @@ import {
   Mic2,
   Music2,
   Droplets,
-  CloudRain
+  CloudRain,
+  Upload,
+  Loader2,
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -168,6 +170,8 @@ import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+
+import FaturaImportModal from './components/FaturaImportModal';
 
 // Utility for Tailwind classes
 function cn(...inputs: ClassValue[]) {
@@ -505,6 +509,7 @@ function AppContent() {
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [showBudgetModal, setShowBudgetModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
+  const [showFaturaModal, setShowFaturaModal] = useState(false);
   const [showResetModal, setShowResetModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [showNotificationCenter, setShowNotificationCenter] = useState(false);
@@ -1535,6 +1540,53 @@ function AppContent() {
     }
   };
 
+  /**
+   * Importa transações extraídas de uma fatura de cartão de crédito (PDF).
+   * As transações são criadas como despesas de tipo 'credit' na conta escolhida.
+   */
+  const handleImportFatura = async (transactions: any[]) => {
+    if (!user) return;
+    try {
+      // Usuário escolhe a conta de cartão de crédito no modal de importação.
+      // Por enquanto, usamos a primeira conta do tipo 'credit' ou 'hybrid'.
+      const creditAccount = accounts.find(acc => acc.type === 'credit' || acc.type === 'hybrid');
+      const accountId = creditAccount ? creditAccount.id : accounts[0]?.id;
+
+      if (!accountId) {
+        throw new Error('Nenhuma conta encontrada para vincular as transações.');
+      }
+
+      const batch = writeBatch(db);
+      const colRef = collection(db, 'transactions');
+
+      transactions.forEach((tx) => {
+        const purchaseDate = new Date(tx.date + 'T00:00:00');
+        let dueDate = purchaseDate;
+        if (creditAccount && (creditAccount.type === 'credit' || creditAccount.type === 'hybrid') && creditAccount.closingDay && creditAccount.dueDay) {
+          dueDate = calculateDueDate(purchaseDate, creditAccount.closingDay, creditAccount.dueDay);
+        }
+
+        const docRef = doc(colRef);
+        batch.set(docRef, {
+          accountId,
+          amount: Math.abs(Number(tx.amount) || 0),
+          type: 'expense',
+          paymentType: 'credit',
+          category: 'Outros',
+          description: String(tx.description || 'Importado'),
+          date: Timestamp.fromDate(purchaseDate),
+          dueDate: Timestamp.fromDate(dueDate),
+          userId: user.uid,
+          createdAt: Timestamp.now(),
+        });
+      });
+
+      await batch.commit();
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, 'transactions');
+    }
+  };
+
   const handleDeleteAccount = async (id: string) => {
     try {
       await deleteDoc(doc(db, 'accounts', id));
@@ -2202,11 +2254,18 @@ function AppContent() {
                   
                   <div className="flex items-center gap-2 w-full sm:w-auto">
                     <button 
+                      onClick={() => setShowFaturaModal(true)}
+                      className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-400 px-4 py-2 rounded-xl hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-all font-semibold text-sm shadow-sm active:scale-95"
+                    >
+                      <FileText className="w-4 h-4" />
+                      <span>Importar Fatura (PDF)</span>
+                    </button>
+                    <button 
                       onClick={() => setShowImportModal(true)}
                       className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 px-4 py-2 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700 transition-all font-semibold text-sm shadow-sm active:scale-95"
                     >
                       <RefreshCcw className="w-4 h-4" />
-                      <span>Importar</span>
+                      <span>Importar CSV/XLSX</span>
                     </button>
                     <button 
                       onClick={() => setShowAddModal(true)}
@@ -2878,6 +2937,41 @@ function AppContent() {
                     }
                   }}
                   onCancel={() => setShowImportModal(false)}
+                />
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+      {/* Fatura PDF Import Modal (Gemini AI) */}
+      <AnimatePresence>
+        {showFaturaModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowFaturaModal(false)}
+              className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
+            />
+            <motion.div 
+              initial={{ scale: 0.95, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 20 }}
+              className="bg-white dark:bg-slate-900 w-full max-w-2xl rounded-2xl shadow-2xl relative z-10 overflow-y-auto max-h-[90vh]"
+            >
+              <div className="p-6">
+                <div className="flex justify-between items-center mb-6">
+                  <h2 className="text-xl font-bold">Importar Fatura (PDF)</h2>
+                  <button onClick={() => setShowFaturaModal(false)} className="p-2 hover:bg-slate-100 rounded-full">
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+                
+                <FaturaImportModal 
+                  isTestMode={false}
+                  onClose={() => setShowFaturaModal(false)}
+                  onImport={handleImportFatura}
                 />
               </div>
             </motion.div>
