@@ -283,7 +283,7 @@ export default function FaturaImportModal({ onClose, onImport, isTestMode = fals
                     isEditing ? "bg-indigo-50/50 dark:bg-indigo-900/20" : "hover:bg-slate-50 dark:hover:bg-slate-800/50"
                   )}>
                     {!isEditing ? (
-                      <div className="flex items-start gap-3 p-3">
+                      <div className="group flex items-start gap-3 p-3 border-b border-slate-100 dark:border-slate-800 last:border-b-0 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
                         <div className="text-xs text-slate-400 dark:text-slate-500 w-20 flex-shrink-0 pt-0.5">{tx.date}</div>
                         <div className="flex-1 min-w-0">
                           <p className="font-medium text-sm text-slate-900 dark:text-slate-100 truncate">
@@ -315,14 +315,14 @@ export default function FaturaImportModal({ onClose, onImport, isTestMode = fals
                         </div>
                         <button
                           onClick={() => startEdit(i)}
-                          className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 rounded-lg transition-colors flex-shrink-0"
+                          className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-lg transition-all flex-shrink-0"
                           title="Editar lançamento"
                         >
                           <Edit className="w-4 h-4" />
                         </button>
                         <button
                           onClick={() => removeTransaction(i)}
-                          className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg transition-colors flex-shrink-0"
+                          className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded-lg transition-all flex-shrink-0"
                           title="Remover lançamento"
                         >
                           <Trash2 className="w-4 h-4" />
