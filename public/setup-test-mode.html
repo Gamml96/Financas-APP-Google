@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <title>Setup - Modo Teste</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      margin: 0;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+    }
+    .card {
+      background: rgba(255, 255, 255, 0.1);
+      backdrop-filter: blur(10px);
+      padding: 2rem;
+      border-radius: 1rem;
+      text-align: center;
+      max-width: 400px;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+    }
+    .spinner {
+      border: 4px solid rgba(255, 255, 255, 0.3);
+      border-top: 4px solid white;
+      border-radius: 50%;
+      width: 40px;
+      height: 40px;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 1rem;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    h1 { margin: 0 0 0.5rem; font-size: 1.5rem; }
+    p { margin: 0.5rem 0; opacity: 0.9; }
+    .success { color: #10b981; font-weight: bold; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="spinner"></div>
+    <h1>🔧 Ativando Modo Teste</h1>
+    <p>Configurando ambiente de desenvolvimento...</p>
+    <p class="success" id="status">Aguarde...</p>
+  </div>
+  <script>
+    // Ativa o Modo Teste no localStorage
+    localStorage.setItem('TEST_MODE', 'true');
+    
+    // Atualiza status
+    document.getElementById('status').textContent = '✅ Modo Teste ativado!';
+    
+    // Redireciona para o app
+    setTimeout(() => {
+      window.location.href = 'http://localhost:3000';
+    }, 1000);
+  </script>
+</body>
+</html>
