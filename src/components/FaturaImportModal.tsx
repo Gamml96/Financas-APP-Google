@@ -13,7 +13,7 @@ import {
   Info,
 } from 'lucide-react';
 import { cn } from '../utils/cn';
-import { extractFaturaFromPdf, FaturaResult, FaturaTransaction } from '../services/faturaService';
+import { extractFaturaFromPdf, computeNetTotal, FaturaResult, FaturaTransaction } from '../services/faturaService';
 
 interface FaturaImportModalProps {
   /** Opcional: se for um teste de protótipo (não importa para o Firestore), o botão "Confirmar" pode ser substituído. */
@@ -93,8 +93,7 @@ export default function FaturaImportModal({ onClose, onImport, isTestMode = fals
   const formatValue = (amount: number) =>
     new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(amount);
 
-  const formatTotal = (txs: FaturaTransaction[]) =>
-    txs.reduce((sum, t) => sum + (t.amount || 0), 0);
+  const formatTotal = (txs: FaturaTransaction[]) => computeNetTotal(txs);
 
   return (
     <div className="space-y-6">
@@ -214,27 +213,53 @@ export default function FaturaImportModal({ onClose, onImport, isTestMode = fals
           <div className="space-y-2">
             <h4 className="font-semibold text-slate-900 dark:text-slate-100 text-sm">Lançamentos detectados</h4>
             <div className="max-h-72 overflow-y-auto border border-slate-100 dark:border-slate-800 rounded-xl bg-white dark:bg-slate-900">
-              {result.transactions.map((tx, i) => (
-                <div
-                  key={i}
-                  className="flex items-center gap-3 p-3 border-t border-slate-50 dark:border-slate-800 first:border-t-0 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
-                >
-                  <div className="text-xs text-slate-400 dark:text-slate-500 w-20 flex-shrink-0">{tx.date}</div>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium text-sm text-slate-900 dark:text-slate-100 truncate">{tx.description}</p>
-                  </div>
-                  <div className="font-semibold text-sm text-rose-600 dark:text-rose-400 flex-shrink-0">
-                    {formatValue(tx.amount)}
-                  </div>
-                  <button
-                    onClick={() => removeTransaction(i)}
-                    className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg transition-colors flex-shrink-0"
-                    title="Remover lançamento"
+              {result.transactions.map((tx, i) => {
+                const isRefund = tx.type === 'refund';
+                const isFee = tx.type === 'fee';
+                return (
+                  <div
+                    key={i}
+                    className="flex items-start gap-3 p-3 border-t border-slate-50 dark:border-slate-800 first:border-t-0 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
                   >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-              ))}
+                    <div className="text-xs text-slate-400 dark:text-slate-500 w-20 flex-shrink-0 pt-0.5">{tx.date}</div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-sm text-slate-900 dark:text-slate-100 truncate">
+                        {tx.description}
+                        {tx.installmentNumber && tx.installmentTotal ? (
+                          <span className="ml-1.5 text-xs text-indigo-600 dark:text-indigo-400 font-semibold">
+                            ({tx.installmentNumber}/{tx.installmentTotal})
+                          </span>
+                        ) : null}
+                      </p>
+                      {tx.category && (
+                        <span className={cn(
+                          "inline-block mt-1 px-1.5 py-0.5 text-[10px] rounded-md font-medium",
+                          isRefund
+                            ? "bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400"
+                            : isFee
+                            ? "bg-rose-50 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400"
+                            : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400"
+                        )}>
+                          {isRefund ? '↩️ ' : isFee ? '🏦 ' : ''}{tx.category}
+                        </span>
+                      )}
+                    </div>
+                    <div className={cn(
+                      "font-semibold text-sm flex-shrink-0 pt-0.5",
+                      isRefund ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"
+                    )}>
+                      {isRefund ? '- ' : ''}{formatValue(tx.amount)}
+                    </div>
+                    <button
+                      onClick={() => removeTransaction(i)}
+                      className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg transition-colors flex-shrink-0"
+                      title="Remover lançamento"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>

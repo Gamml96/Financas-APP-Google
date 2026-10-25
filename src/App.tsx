@@ -1543,12 +1543,12 @@ function AppContent() {
   /**
    * Importa transações extraídas de uma fatura de cartão de crédito (PDF).
    * As transações são criadas como despesas de tipo 'credit' na conta escolhida.
+   * Estornos viram 'income' e parcelas são agrupadas por groupId.
    */
   const handleImportFatura = async (transactions: any[]) => {
     if (!user) return;
     try {
-      // Usuário escolhe a conta de cartão de crédito no modal de importação.
-      // Por enquanto, usamos a primeira conta do tipo 'credit' ou 'hybrid'.
+      // Usa a primeira conta do tipo 'credit' ou 'hybrid' disponível.
       const creditAccount = accounts.find(acc => acc.type === 'credit' || acc.type === 'hybrid');
       const accountId = creditAccount ? creditAccount.id : accounts[0]?.id;
 
@@ -1566,19 +1566,32 @@ function AppContent() {
           dueDate = calculateDueDate(purchaseDate, creditAccount.closingDay, creditAccount.dueDay);
         }
 
-        const docRef = doc(colRef);
-        batch.set(docRef, {
+        const isRefund = tx.type === 'refund';
+        const hasInstallment = tx.installmentNumber && tx.installmentTotal && tx.installmentTotal > 1;
+
+        const base: any = {
           accountId,
           amount: Math.abs(Number(tx.amount) || 0),
-          type: 'expense',
+          // Estorno vira income (crédito); tudo o mais é despesa
+          type: isRefund ? 'income' : 'expense',
           paymentType: 'credit',
-          category: 'Outros',
+          category: isRefund ? 'Outros' : (tx.category || 'Outros'),
           description: String(tx.description || 'Importado'),
           date: Timestamp.fromDate(purchaseDate),
           dueDate: Timestamp.fromDate(dueDate),
           userId: user.uid,
           createdAt: Timestamp.now(),
-        });
+        };
+
+        if (hasInstallment) {
+          base.installment = Number(tx.installmentNumber);
+          base.totalInstallments = Number(tx.installmentTotal);
+          // Agrupa parcelas da mesma compra (mesma descrição + total de parcelas + valor)
+          base.groupId = `fatura-${tx.description}-${tx.installmentTotal}-${tx.amount}`;
+        }
+
+        const docRef = doc(colRef);
+        batch.set(docRef, base);
       });
 
       await batch.commit();
