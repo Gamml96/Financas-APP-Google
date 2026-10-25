@@ -172,6 +172,7 @@ import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
 import FaturaImportModal from './components/FaturaImportModal';
+import { hashGroupId, filterDuplicates } from './services/faturaDedup';
 
 // Utility for Tailwind classes
 function cn(...inputs: ClassValue[]) {
@@ -1543,9 +1544,10 @@ function AppContent() {
   /**
    * Importa transações extraídas de uma fatura de cartão de crédito (PDF).
    * As transações são criadas como despesas de tipo 'credit' na conta escolhida.
+   * Parcelas são agrupadas por groupId (hash determinístico) para evitar duplicatas.
    * Estornos viram 'income' e parcelas são agrupadas por groupId.
    */
-  const handleImportFatura = async (transactions: any[]) => {
+  const handleImportFatura = async (extractedTransactions: any[]) => {
     if (!user) return;
     try {
       // Usa a primeira conta do tipo 'credit' ou 'hybrid' disponível.
@@ -1556,10 +1558,29 @@ function AppContent() {
         throw new Error('Nenhuma conta encontrada para vincular as transações.');
       }
 
+      // 🔒 DEDUPLICAÇÃO: constrói conjuntos de transações já existentes no Firestore
+      // usando o estado `transactions` (já populado pelo listener onSnapshot) como fonte da verdade.
+      const existingGroups = new Set<string>();
+      const existingByDate = new Map<string, boolean>();
+      transactions.forEach((tx: any) => {
+        if (tx.installmentNumber && tx.installmentTotal && tx.installmentTotal > 1) {
+          existingGroups.add(hashGroupId(tx));
+        }
+        const key = `${tx.date}|${(tx.description || '').trim().toLowerCase()}|${Number(tx.amount || 0).toFixed(2)}`;
+        existingByDate.set(key, true);
+      });
+
+      const { newTransactions, skipped } = filterDuplicates(extractedTransactions, existingGroups, existingByDate);
+
+      if (newTransactions.length === 0) {
+        // Usuário será notificado pelo toast no modal
+        return;
+      }
+
       const batch = writeBatch(db);
       const colRef = collection(db, 'transactions');
 
-      transactions.forEach((tx) => {
+      newTransactions.forEach((tx) => {
         const purchaseDate = new Date(tx.date + 'T00:00:00');
         let dueDate = purchaseDate;
         if (creditAccount && (creditAccount.type === 'credit' || creditAccount.type === 'hybrid') && creditAccount.closingDay && creditAccount.dueDay) {
@@ -1587,7 +1608,7 @@ function AppContent() {
           base.installment = Number(tx.installmentNumber);
           base.totalInstallments = Number(tx.installmentTotal);
           // Agrupa parcelas da mesma compra (mesma descrição + total de parcelas + valor)
-          base.groupId = `fatura-${tx.description}-${tx.installmentTotal}-${tx.amount}`;
+          base.groupId = hashGroupId(tx);
         }
 
         const docRef = doc(colRef);
