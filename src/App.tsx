@@ -173,6 +173,7 @@ import { twMerge } from 'tailwind-merge';
 
 import FaturaImportModal from './components/FaturaImportModal';
 import { hashGroupId, filterDuplicates } from './services/faturaDedup';
+import { useTestMode, createTestUser } from './hooks/useTestMode';
 
 // Utility for Tailwind classes
 function cn(...inputs: ClassValue[]) {
@@ -492,6 +493,7 @@ function BottomNav({ activeView, setActiveView, onAdd, onAccounts, onCategories,
 }
 
 function AppContent() {
+  const { isTestMode, toggleTestMode } = useTestMode();
   const [user, setUser] = useState<User | null>(null);
   const [userProfile, setUserProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -789,6 +791,17 @@ function AppContent() {
 
   // Auth Listener
   useEffect(() => {
+    // 🔧 Modo Teste: pula o Firebase Auth quando TEST_MODE está ativo no localStorage.
+    // Útil quando o Firebase configurado não é o seu (ex: AI Studio).
+    if (isTestMode) {
+      const testUser = createTestUser();
+      setUser(testUser);
+      setIsAuthorized(true);
+      setIsAuthReady(true);
+      setLoading(false);
+      return;
+    }
+
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       if (currentUser) {
         // Check if user is authorized
@@ -812,7 +825,7 @@ function AppContent() {
       setLoading(false);
     });
     return () => unsubscribe();
-  }, []);
+  }, [isTestMode]);
 
   // Transactions Listener
   useEffect(() => {
@@ -1993,9 +2006,28 @@ function AppContent() {
                 <span className="text-sm font-medium">Ajustes</span>
               </button>
               <div className="hidden sm:flex flex-col items-end">
-                <span className="text-sm font-medium">{userProfile?.displayName || user.displayName}</span>
+                <span className="text-sm font-medium">
+                  {userProfile?.displayName || user.displayName}
+                  {isTestMode && (
+                    <span className="ml-2 px-1.5 py-0.5 text-[10px] font-bold bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400 rounded">
+                      TESTE
+                    </span>
+                  )}
+                </span>
                 <span className="text-xs text-slate-500">{user.email}</span>
               </div>
+              <button 
+                onClick={toggleTestMode}
+                className={cn(
+                  "p-2 rounded-full transition-colors",
+                  isTestMode
+                    ? "text-amber-600 bg-amber-50 dark:bg-amber-900/30 hover:bg-amber-100 dark:hover:bg-amber-900/50"
+                    : "text-slate-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20"
+                )}
+                title={isTestMode ? "Desativar Modo Teste" : "Ativar Modo Teste (bypass Firebase)"}
+              >
+                {isTestMode ? <AlertTriangle className="w-4 h-4" /> : <Shield className="w-4 h-4" />}
+              </button>
               <button 
                 onClick={logout}
                 className="p-2 text-slate-500 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors"
