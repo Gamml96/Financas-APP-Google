@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import {
   Upload,
@@ -17,20 +17,36 @@ import { cn } from '../utils/cn';
 import { extractFaturaFromPdf, computeNetTotal, FaturaResult, FaturaTransaction } from '../services/faturaService';
 
 interface FaturaImportModalProps {
-  /** Opcional: se for um teste de protótipo (não importa para o Firestore), o botão "Confirmar" pode ser substituído. */
+  /** Lista de contas do usuário para seleção */
+  accounts: Array<{ id: string; name: string; type: string; isFavorite?: boolean }>;
+  /** Callback ao confirmar a importação */
+  onImport: (transactions: FaturaTransaction[], accountId: string) => Promise<void>;
+  /** Callback ao fechar o modal */
   onClose: () => void;
-  onImport: (transactions: FaturaTransaction[]) => Promise<void>;
+  /** Se true, mostra botão "Ver JSON" em vez de importar */
   isTestMode?: boolean;
 }
 
-type Step = 'select' | 'processing' | 'preview' | 'error';
+type Step = 'select' | 'processing' | 'account' | 'preview' | 'error';
 
-export default function FaturaImportModal({ onClose, onImport, isTestMode = false }: FaturaImportModalProps) {
+export default function FaturaImportModal({ onClose, onImport, accounts, isTestMode = false }: FaturaImportModalProps) {
   const [step, setStep] = useState<Step>('select');
   const [file, setFile] = useState<File | null>(null);
   const [result, setResult] = useState<FaturaResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isImporting, setIsImporting] = useState(false);
+  const [selectedAccountId, setSelectedAccountId] = useState<string>('');
+
+  // Filtra apenas contas de crédito/híbridas
+  const creditAccounts = accounts.filter(acc => acc.type === 'credit' || acc.type === 'hybrid');
+  // Se houver uma conta favorita de crédito, seleciona automaticamente
+  const defaultAccount = accounts.find(acc => (acc.type === 'credit' || acc.type === 'hybrid') && acc.isFavorite)?.id || creditAccounts[0]?.id || '';
+
+  useEffect(() => {
+    if (defaultAccount && !selectedAccountId) {
+      setSelectedAccountId(defaultAccount);
+    }
+  }, [defaultAccount, selectedAccountId]);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const selected = e.target.files?.[0];
@@ -63,7 +79,7 @@ export default function FaturaImportModal({ onClose, onImport, isTestMode = fals
         return;
       }
 
-      setStep('preview');
+      setStep('account');
     } catch (err: any) {
       const msg = err?.message || String(err);
       // Mensagem amigável para erros temporários do Gemini (503, 429, etc.)
@@ -137,9 +153,14 @@ export default function FaturaImportModal({ onClose, onImport, isTestMode = fals
 
   const handleConfirmImport = async () => {
     if (!result || result.transactions.length === 0) return;
+    if (!selectedAccountId) {
+      setError('Por favor, selecione uma conta de crédito para importar.');
+      setStep('account');
+      return;
+    }
     setIsImporting(true);
     try {
-      await onImport(result.transactions);
+      await onImport(result.transactions, selectedAccountId);
       onClose();
     } catch (err: any) {
       setError('Erro ao importar: ' + (err?.message || String(err)));
@@ -223,6 +244,57 @@ export default function FaturaImportModal({ onClose, onImport, isTestMode = fals
               <Loader2 className="w-4 h-4 animate-spin" />
               <span>{file?.name}</span>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* STEP: Select Account */}
+      {step === 'account' && result && (
+        <div className="space-y-4">
+          <div className="bg-indigo-50 dark:bg-indigo-900/20 p-4 rounded-xl border border-indigo-100 dark:border-indigo-800/50">
+            <h4 className="font-semibold text-slate-900 dark:text-slate-100 text-sm mb-1">Selecione a conta para importar</h4>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Os {result.transactions.length} lançamentos extraídos serão vinculados à conta selecionada.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            {creditAccounts.length > 0 ? (
+              creditAccounts.map((acc) => (
+                <button
+                  key={acc.id}
+                  onClick={() => setSelectedAccountId(acc.id)}
+                  className={cn(
+                    "w-full flex items-center gap-3 p-4 rounded-xl border-2 transition-all text-left",
+                    selectedAccountId === acc.id
+                      ? "border-indigo-600 bg-indigo-50 dark:bg-indigo-900/30"
+                      : "border-slate-200 dark:border-slate-700 hover:border-indigo-300 dark:hover:border-indigo-700"
+                  )}
+                >
+                  <div className={cn(
+                    "w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0",
+                    selectedAccountId === acc.id
+                      ? "border-indigo-600 bg-indigo-600"
+                      : "border-slate-300 dark:border-slate-600"
+                  )}>
+                    {selectedAccountId === acc.id && <CheckCircle2 className="w-3 h-3 text-white" />}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-sm text-slate-900 dark:text-slate-100">{acc.name}</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 capitalize">{acc.type === 'credit' ? 'Cartão de Crédito' : 'Híbrido'}</p>
+                  </div>
+                  {acc.isFavorite && (
+                    <span className="text-xs font-medium text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/30 px-2 py-0.5 rounded-full">
+                      Favorita
+                    </span>
+                  )}
+                </button>
+              ))
+            ) : (
+              <div className="p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-800 rounded-xl text-sm text-amber-700 dark:text-amber-400">
+                Nenhuma conta de crédito encontrada. Crie uma conta de cartão de crédito primeiro.
+              </div>
+            )}
           </div>
         </div>
       )}

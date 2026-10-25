@@ -1560,16 +1560,17 @@ function AppContent() {
    * Parcelas são agrupadas por groupId (hash determinístico) para evitar duplicatas.
    * Estornos viram 'income' e parcelas são agrupadas por groupId.
    */
-  const handleImportFatura = async (extractedTransactions: any[]) => {
+  const handleImportFatura = async (extractedTransactions: any[], selectedAccountId?: string) => {
     if (!user) return;
     try {
-      // Usa a primeira conta do tipo 'credit' ou 'hybrid' disponível.
-      const creditAccount = accounts.find(acc => acc.type === 'credit' || acc.type === 'hybrid');
-      const accountId = creditAccount ? creditAccount.id : accounts[0]?.id;
+      // Usa a conta selecionada pelo usuário, ou a primeira conta de crédito disponível
+      const accountId = selectedAccountId || accounts.find(acc => acc.type === 'credit' || acc.type === 'hybrid')?.id || accounts[0]?.id;
 
       if (!accountId) {
         throw new Error('Nenhuma conta encontrada para vincular as transações.');
       }
+
+      const creditAccount = accounts.find(acc => acc.id === accountId);
 
       // 🔒 DEDUPLICAÇÃO: constrói conjuntos de transações já existentes no Firestore
       // usando o estado `transactions` (já populado pelo listener onSnapshot) como fonte da verdade.
@@ -3034,7 +3035,8 @@ function AppContent() {
                   </button>
                 </div>
                 
-                <FaturaImportModal 
+                <FaturaImportModal
+                  accounts={accounts}
                   isTestMode={false}
                   onClose={() => setShowFaturaModal(false)}
                   onImport={handleImportFatura}
