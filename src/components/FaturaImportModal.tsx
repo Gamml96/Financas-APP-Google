@@ -11,6 +11,7 @@ import {
   CreditCard,
   X,
   Info,
+  Edit,
 } from 'lucide-react';
 import { cn } from '../utils/cn';
 import { extractFaturaFromPdf, computeNetTotal, FaturaResult, FaturaTransaction } from '../services/faturaService';
@@ -78,6 +79,60 @@ export default function FaturaImportModal({ onClose, onImport, isTestMode = fals
     if (!result) return;
     const updated = result.transactions.filter((_, i) => i !== index);
     setResult({ ...result, transactions: updated });
+  };
+
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [editForm, setEditForm] = useState<{
+    description: string;
+    amount: string;
+    category: string;
+    type: 'purchase' | 'fee' | 'refund';
+    date: string;
+    installmentNumber?: number;
+    installmentTotal?: number;
+  } | null>(null);
+
+  const startEdit = (index: number) => {
+    const tx = result?.transactions[index];
+    if (!tx) return;
+    setEditingIndex(index);
+    setEditForm({
+      description: tx.description,
+      amount: String(tx.amount),
+      category: tx.category || 'Outros',
+      type: tx.type || 'purchase',
+      date: tx.date,
+      installmentNumber: tx.installmentNumber,
+      installmentTotal: tx.installmentTotal,
+    });
+  };
+
+  const cancelEdit = () => {
+    setEditingIndex(null);
+    setEditForm(null);
+  };
+
+  const saveEdit = () => {
+    if (!result || editingIndex === null || !editForm) return;
+    const amount = parseFloat(editForm.amount.replace(',', '.'));
+    if (isNaN(amount) || amount <= 0) {
+      alert('Valor inválido');
+      return;
+    }
+    const updated = [...result.transactions];
+    updated[editingIndex] = {
+      ...updated[editingIndex],
+      description: editForm.description.trim(),
+      amount,
+      category: editForm.category,
+      type: editForm.type,
+      date: editForm.date,
+      installmentNumber: editForm.installmentNumber,
+      installmentTotal: editForm.installmentTotal,
+    };
+    setResult({ ...result, transactions: updated });
+    setEditingIndex(null);
+    setEditForm(null);
   };
 
   const handleConfirmImport = async () => {
@@ -220,47 +275,155 @@ export default function FaturaImportModal({ onClose, onImport, isTestMode = fals
               {result.transactions.map((tx, i) => {
                 const isRefund = tx.type === 'refund';
                 const isFee = tx.type === 'fee';
+                const isEditing = editingIndex === i;
+
                 return (
-                  <div
-                    key={i}
-                    className="flex items-start gap-3 p-3 border-t border-slate-50 dark:border-slate-800 first:border-t-0 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
-                  >
-                    <div className="text-xs text-slate-400 dark:text-slate-500 w-20 flex-shrink-0 pt-0.5">{tx.date}</div>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium text-sm text-slate-900 dark:text-slate-100 truncate">
-                        {tx.description}
-                        {tx.installmentNumber && tx.installmentTotal ? (
-                          <span className="ml-1.5 text-xs text-indigo-600 dark:text-indigo-400 font-semibold">
-                            ({tx.installmentNumber}/{tx.installmentTotal})
-                          </span>
-                        ) : null}
-                      </p>
-                      {tx.category && (
-                        <span className={cn(
-                          "inline-block mt-1 px-1.5 py-0.5 text-[10px] rounded-md font-medium",
-                          isRefund
-                            ? "bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400"
-                            : isFee
-                            ? "bg-rose-50 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400"
-                            : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400"
+                  <div key={i} className={cn(
+                    "border-t border-slate-50 dark:border-slate-800 transition-colors",
+                    isEditing ? "bg-indigo-50/50 dark:bg-indigo-900/20" : "hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                  )}>
+                    {!isEditing ? (
+                      <div className="flex items-start gap-3 p-3">
+                        <div className="text-xs text-slate-400 dark:text-slate-500 w-20 flex-shrink-0 pt-0.5">{tx.date}</div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-sm text-slate-900 dark:text-slate-100 truncate">
+                            {tx.description}
+                            {tx.installmentNumber && tx.installmentTotal ? (
+                              <span className="ml-1.5 text-xs text-indigo-600 dark:text-indigo-400 font-semibold">
+                                ({tx.installmentNumber}/{tx.installmentTotal})
+                              </span>
+                            ) : null}
+                          </p>
+                          {tx.category && (
+                            <span className={cn(
+                              "inline-block mt-1 px-1.5 py-0.5 text-[10px] rounded-md font-medium",
+                              isRefund
+                                ? "bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400"
+                                : isFee
+                                ? "bg-rose-50 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400"
+                                : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400"
+                            )}>
+                              {isRefund ? '↩️ ' : isFee ? '🏦 ' : ''}{tx.category}
+                            </span>
+                          )}
+                        </div>
+                        <div className={cn(
+                          "font-semibold text-sm flex-shrink-0 pt-0.5",
+                          isRefund ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"
                         )}>
-                          {isRefund ? '↩️ ' : isFee ? '🏦 ' : ''}{tx.category}
-                        </span>
-                      )}
-                    </div>
-                    <div className={cn(
-                      "font-semibold text-sm flex-shrink-0 pt-0.5",
-                      isRefund ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"
-                    )}>
-                      {isRefund ? '- ' : ''}{formatValue(tx.amount)}
-                    </div>
-                    <button
-                      onClick={() => removeTransaction(i)}
-                      className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg transition-colors flex-shrink-0"
-                      title="Remover lançamento"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                          {isRefund ? '- ' : ''}{formatValue(tx.amount)}
+                        </div>
+                        <button
+                          onClick={() => startEdit(i)}
+                          className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 rounded-lg transition-colors flex-shrink-0"
+                          title="Editar lançamento"
+                        >
+                          <Edit className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => removeTransaction(i)}
+                          className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg transition-colors flex-shrink-0"
+                          title="Remover lançamento"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="p-3 space-y-3">
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="block text-[10px] font-medium text-slate-500 dark:text-slate-400 mb-1">Data</label>
+                            <input
+                              type="date"
+                              value={editForm.date}
+                              onChange={(e) => setEditForm({ ...editForm, date: e.target.value })}
+                              className="w-full text-xs px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-medium text-slate-500 dark:text-slate-400 mb-1">Valor</label>
+                            <input
+                              type="number"
+                              step="0.01"
+                              value={editForm.amount}
+                              onChange={(e) => setEditForm({ ...editForm, amount: e.target.value })}
+                              className="w-full text-xs px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
+                            />
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-medium text-slate-500 dark:text-slate-400 mb-1">Descrição</label>
+                          <input
+                            type="text"
+                            value={editForm.description}
+                            onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
+                            className="w-full text-xs px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
+                          />
+                        </div>
+                        <div className="grid grid-cols-3 gap-2">
+                          <div>
+                            <label className="block text-[10px] font-medium text-slate-500 dark:text-slate-400 mb-1">Categoria</label>
+                            <select
+                              value={editForm.category}
+                              onChange={(e) => setEditForm({ ...editForm, category: e.target.value })}
+                              className="w-full text-xs px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
+                            >
+                              <option value="Alimentação">Alimentação</option>
+                              <option value="Transporte">Transporte</option>
+                              <option value="Compras">Compras</option>
+                              <option value="Entretenimento">Entretenimento</option>
+                              <option value="Saúde">Saúde</option>
+                              <option value="Aluguel">Aluguel</option>
+                              <option value="Encargos">Encargos</option>
+                              <option value="Outros">Outros</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-medium text-slate-500 dark:text-slate-400 mb-1">Tipo</label>
+                            <select
+                              value={editForm.type}
+                              onChange={(e) => setEditForm({ ...editForm, type: e.target.value as any })}
+                              className="w-full text-xs px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
+                            >
+                              <option value="purchase">Compra</option>
+                              <option value="fee">Encargo</option>
+                              <option value="refund">Estorno</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-medium text-slate-500 dark:text-slate-400 mb-1">Parcela</label>
+                            <input
+                              type="text"
+                              placeholder="(N/M)"
+                              value={`${editForm.installmentNumber ?? ''}/${editForm.installmentTotal ?? ''}`}
+                              onChange={(e) => {
+                                const [n, m] = e.target.value.split('/');
+                                setEditForm({
+                                  ...editForm,
+                                  installmentNumber: n ? parseInt(n) : undefined,
+                                  installmentTotal: m ? parseInt(m) : undefined,
+                                });
+                              }}
+                              className="w-full text-xs px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
+                            />
+                          </div>
+                        </div>
+                        <div className="flex gap-2 justify-end">
+                          <button
+                            onClick={cancelEdit}
+                            className="px-3 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
+                          >
+                            Cancelar
+                          </button>
+                          <button
+                            onClick={saveEdit}
+                            className="px-3 py-1.5 text-xs font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors"
+                          >
+                            Salvar
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 );
               })}
