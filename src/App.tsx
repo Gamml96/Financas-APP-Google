@@ -174,6 +174,8 @@ import { twMerge } from 'tailwind-merge';
 import FaturaImportModal from './components/FaturaImportModal';
 import { hashGroupId, filterDuplicates } from './services/faturaDedup';
 import { useTestMode, createTestUser } from './hooks/useTestMode';
+import { useLocalCollection, useLocalUserProfile } from './hooks/useLocalData';
+import { localStorageService } from './services/localStorageService';
 
 // Utility for Tailwind classes
 function cn(...inputs: ClassValue[]) {
@@ -503,6 +505,24 @@ function AppContent() {
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [isAuthorized, setIsAuthorized] = useState<boolean | null>(null);
+
+  // 🔧 Modo Teste: usa localStorage em vez do Firestore
+  const localAccounts = useLocalCollection('accounts', isTestMode);
+  const localTransactions = useLocalCollection('transactions', isTestMode);
+  const localCategories = useLocalCollection('categories', isTestMode);
+  const localBudgets = useLocalCollection('budgets', isTestMode);
+  const localUserProfile = useLocalUserProfile(isTestMode);
+
+  // Sincroniza estado local com os hooks do Modo Teste
+  useEffect(() => {
+    if (isTestMode) {
+      setAccounts(localAccounts);
+      setTransactions(localTransactions);
+      setCustomCategories(localCategories);
+      setBudgets(localBudgets);
+      setUserProfile(localUserProfile);
+    }
+  }, [isTestMode, localAccounts, localTransactions, localCategories, localBudgets, localUserProfile]);
   const [viewMode, setViewMode] = useState<'purchase' | 'due'>('due');
   const [analysisLevel, setAnalysisLevel] = useState<'category' | 'subcategory'>('subcategory');
   const [showAddModal, setShowAddModal] = useState(false);
@@ -1498,6 +1518,10 @@ function AppContent() {
   };
 
   const handleAddAccount = async (data: Omit<Account, 'id' | 'createdAt'>) => {
+    if (isTestMode) {
+      localStorageService.addAccount(data);
+      return;
+    }
     if (!user) return;
     try {
       if (data.isFavorite) {
@@ -1561,6 +1585,43 @@ function AppContent() {
    * Estornos viram 'income' e parcelas são agrupadas por groupId.
    */
   const handleImportFatura = async (extractedTransactions: any[], selectedAccountId?: string) => {
+    if (isTestMode) {
+      // Modo Teste: salva no localStorage
+      const accountId = selectedAccountId || accounts.find(acc => acc.type === 'credit' || acc.type === 'hybrid')?.id;
+      if (!accountId) throw new Error('Nenhuma conta encontrada.');
+
+      const creditAccount = accounts.find(acc => acc.id === accountId);
+      const txs = extractedTransactions.map((tx: any) => {
+        const purchaseDate = new Date(tx.date + 'T00:00:00');
+        let dueDate = purchaseDate;
+        if (creditAccount && (creditAccount.type === 'credit' || creditAccount.type === 'hybrid') && creditAccount.closingDay && creditAccount.dueDay) {
+          dueDate = calculateDueDate(purchaseDate, creditAccount.closingDay, creditAccount.dueDay);
+        }
+        const isRefund = tx.type === 'refund';
+        const hasInstallment = tx.installmentNumber && tx.installmentTotal && tx.installmentTotal > 1;
+        const base: any = {
+          accountId,
+          amount: Math.abs(Number(tx.amount) || 0),
+          type: isRefund ? 'income' : 'expense',
+          paymentType: 'credit',
+          category: isRefund ? 'Outros' : (tx.category || 'Outros'),
+          description: String(tx.description || 'Importado'),
+          date: Timestamp.fromDate(purchaseDate),
+          dueDate: Timestamp.fromDate(dueDate),
+          userId: user?.uid || 'test-user-001',
+          createdAt: Timestamp.now(),
+        };
+        if (hasInstallment) {
+          base.installment = Number(tx.installmentNumber);
+          base.totalInstallments = Number(tx.installmentTotal);
+          base.groupId = hashGroupId(tx);
+        }
+        return base;
+      });
+      localStorageService.addTransactions(txs);
+      return;
+    }
+
     if (!user) return;
     try {
       // Usa a conta selecionada pelo usuário, ou a primeira conta de crédito disponível
