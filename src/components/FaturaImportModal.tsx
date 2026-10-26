@@ -296,6 +296,24 @@ export default function FaturaImportModal({ onClose, onImport, accounts, isTestM
               </div>
             )}
           </div>
+
+          {/* Botões de navegação */}
+          <div className="flex gap-3 pt-2">
+            <button
+              onClick={() => setStep('select')}
+              className="flex-1 py-3 border border-slate-200 dark:border-slate-700 rounded-xl font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all"
+            >
+              Voltar
+            </button>
+            <button
+              onClick={() => setStep('preview')}
+              disabled={!selectedAccountId}
+              className="flex-1 py-3 bg-indigo-600 text-white rounded-xl font-semibold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100 dark:shadow-none disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            >
+              <CreditCard className="w-4 h-4" />
+              Próximo: Revisar Lançamentos
+            </button>
+          </div>
         </div>
       )}
 
@@ -526,10 +544,14 @@ export default function FaturaImportModal({ onClose, onImport, accounts, isTestM
       {/* Ações */}
       <div className="flex gap-3 pt-2">
         <button
-          onClick={onClose}
+          onClick={() => {
+            if (step === 'preview') setStep('account');
+            else if (step === 'account') setStep('select');
+            else onClose();
+          }}
           className="flex-1 py-3 border border-slate-200 dark:border-slate-700 rounded-xl font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all"
         >
-          {step === 'preview' ? 'Cancelar' : 'Fechar'}
+          {step === 'preview' ? 'Voltar' : step === 'account' ? 'Voltar' : 'Fechar'}
         </button>
         {step === 'preview' && (
           <button
