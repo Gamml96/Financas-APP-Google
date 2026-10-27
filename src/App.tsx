@@ -173,9 +173,6 @@ import { twMerge } from 'tailwind-merge';
 
 import FaturaImportModal from './components/FaturaImportModal';
 import { hashGroupId, filterDuplicates } from './services/faturaDedup';
-import { useTestMode, createTestUser } from './hooks/useTestMode';
-import { useLocalCollection, useLocalUserProfile } from './hooks/useLocalData';
-import { localStorageService } from './services/localStorageService';
 
 // Utility for Tailwind classes
 function cn(...inputs: ClassValue[]) {
@@ -495,7 +492,6 @@ function BottomNav({ activeView, setActiveView, onAdd, onAccounts, onCategories,
 }
 
 function AppContent() {
-  const { isTestMode, toggleTestMode } = useTestMode();
   const [user, setUser] = useState<User | null>(null);
   const [userProfile, setUserProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -505,24 +501,6 @@ function AppContent() {
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [isAuthorized, setIsAuthorized] = useState<boolean | null>(null);
-
-  // 🔧 Modo Teste: usa localStorage em vez do Firestore
-  const localAccounts = useLocalCollection('accounts', isTestMode);
-  const localTransactions = useLocalCollection('transactions', isTestMode);
-  const localCategories = useLocalCollection('categories', isTestMode);
-  const localBudgets = useLocalCollection('budgets', isTestMode);
-  const localUserProfile = useLocalUserProfile(isTestMode);
-
-  // Sincroniza estado local com os hooks do Modo Teste
-  useEffect(() => {
-    if (isTestMode) {
-      setAccounts(localAccounts);
-      setTransactions(localTransactions);
-      setCustomCategories(localCategories);
-      setBudgets(localBudgets);
-      setUserProfile(localUserProfile);
-    }
-  }, [isTestMode, localAccounts, localTransactions, localCategories, localBudgets, localUserProfile]);
   const [viewMode, setViewMode] = useState<'purchase' | 'due'>('due');
   const [analysisLevel, setAnalysisLevel] = useState<'category' | 'subcategory'>('subcategory');
   const [showAddModal, setShowAddModal] = useState(false);
@@ -811,17 +789,6 @@ function AppContent() {
 
   // Auth Listener
   useEffect(() => {
-    // 🔧 Modo Teste: pula o Firebase Auth quando TEST_MODE está ativo no localStorage.
-    // Útil quando o Firebase configurado não é o seu (ex: AI Studio).
-    if (isTestMode) {
-      const testUser = createTestUser();
-      setUser(testUser);
-      setIsAuthorized(true);
-      setIsAuthReady(true);
-      setLoading(false);
-      return;
-    }
-
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       if (currentUser) {
         // Check if user is authorized
@@ -845,7 +812,7 @@ function AppContent() {
       setLoading(false);
     });
     return () => unsubscribe();
-  }, [isTestMode]);
+  }, []);
 
   // Transactions Listener
   useEffect(() => {
@@ -1382,118 +1349,6 @@ function AppContent() {
   }, [dailyBalanceData]);
 
   const handleAddTransaction = async (data: any) => {
-    if (isTestMode) {
-      // Modo Teste: salva no localStorage
-      const { installments, isRecurring, recurringMonths, frequency, toAccountId, ...baseData } = data;
-      const numInstallments = parseInt(installments) || 1;
-      const numRecurring = isRecurring ? (parseInt(recurringMonths) || 12) : 1;
-      const totalIterations = Math.max(numInstallments, numRecurring);
-
-      const groupId = totalIterations > 1 ? (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15)) : undefined;
-      const purchaseDate = parseISO(data.date);
-      if (isNaN(purchaseDate.getTime())) throw new Error("Data de compra inválida");
-
-      const account = accounts.find(a => a.id === data.accountId);
-      const totalAmount = baseData.amount;
-      const installmentAmount = numInstallments > 1 ? Math.floor((totalAmount / numInstallments) * 100) / 100 : totalAmount;
-      const remainder = numInstallments > 1 ? Math.round((totalAmount - (installmentAmount * numInstallments)) * 100) / 100 : 0;
-
-      for (let i = 0; i < totalIterations; i++) {
-        let currentDate: Date;
-        if (isRecurring) {
-          if (frequency === 'weekly') currentDate = addWeeks(purchaseDate, i);
-          else if (frequency === 'yearly') currentDate = addYears(purchaseDate, i);
-          else currentDate = addMonths(purchaseDate, i);
-        } else {
-          currentDate = purchaseDate;
-        }
-
-        let dueDate = currentDate;
-        if (data.paymentType === 'credit') {
-          if (i === 0 && data.dueDate) {
-            const parsedDueDate = parseISO(data.dueDate);
-            if (!isNaN(parsedDueDate.getTime())) dueDate = parsedDueDate;
-          } else if ((account?.type === 'credit' || account?.type === 'hybrid') && account.closingDay && account.dueDay) {
-            const baseDateForDueDate = addMonths(purchaseDate, i);
-            dueDate = calculateDueDate(baseDateForDueDate, account.closingDay, account.dueDay);
-          }
-        }
-
-        let currentAmount = installmentAmount;
-        if (i === 0 && numInstallments > 1) {
-          currentAmount = Math.round((installmentAmount + remainder) * 100) / 100;
-        }
-
-        let currentSplits = null;
-        if (data.splits && data.splits.length > 0) {
-          const totalAmount = data.amount;
-          currentSplits = data.splits.map((split: any) => ({
-            category: split.category,
-            amount: Math.round((currentAmount * (split.amount / totalAmount)) * 100) / 100
-          }));
-          const splitsSum = currentSplits.reduce((sum: number, s: any) => sum + s.amount, 0);
-          const diff = Math.round((currentAmount - splitsSum) * 100) / 100;
-          if (diff !== 0 && currentSplits.length > 0) {
-            currentSplits[currentSplits.length - 1].amount = Math.round((currentSplits[currentSplits.length - 1].amount + diff) * 100) / 100;
-          }
-        }
-
-        if (data.type === 'transfer') {
-          const transferGroupId = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15);
-          // Expense (Source)
-          localStorageService.addTransaction({
-            ...baseData,
-            amount: currentAmount,
-            type: 'expense',
-            userId: user?.uid || 'test-user-001',
-            createdAt: Timestamp.now(),
-            date: Timestamp.fromDate(currentDate),
-            dueDate: Timestamp.fromDate(dueDate),
-            groupId: totalIterations > 1 ? groupId : transferGroupId,
-            description: baseData.description || `Transferência para ${accounts.find(a => a.id === toAccountId)?.name}`,
-          });
-          // Income (Destination)
-          localStorageService.addTransaction({
-            ...baseData,
-            amount: currentAmount,
-            type: 'income',
-            accountId: toAccountId,
-            userId: user?.uid || 'test-user-001',
-            createdAt: Timestamp.now(),
-            date: Timestamp.fromDate(currentDate),
-            dueDate: Timestamp.fromDate(dueDate),
-            groupId: totalIterations > 1 ? groupId : transferGroupId,
-            description: baseData.description || `Transferência de ${accounts.find(a => a.id === baseData.accountId)?.name}`,
-          });
-        } else {
-          const transactionData: any = {
-            ...baseData,
-            amount: currentAmount,
-            userId: user?.uid || 'test-user-001',
-            createdAt: Timestamp.now(),
-            date: Timestamp.fromDate(currentDate),
-            dueDate: Timestamp.fromDate(dueDate),
-            splits: currentSplits
-          };
-          if (numInstallments > 1) {
-            transactionData.installment = i + 1;
-            transactionData.totalInstallments = numInstallments;
-            transactionData.groupId = groupId;
-          } else if (isRecurring) {
-            transactionData.isRecurring = true;
-            transactionData.frequency = frequency;
-            transactionData.groupId = groupId;
-          }
-          localStorageService.addTransaction(transactionData);
-        }
-      }
-
-      // ✅ Toast de confirmação
-      setToast({ message: `✅ Transação adicionada com sucesso!`, type: 'success' });
-      setTransactions(localStorageService.getTransactions());
-      return;
-    }
-
     if (!user) return;
     try {
       const { installments, isRecurring, recurringMonths, frequency, toAccountId, ...baseData } = data;
@@ -1630,10 +1485,6 @@ function AppContent() {
   };
 
   const handleAddAccount = async (data: Omit<Account, 'id' | 'createdAt'>) => {
-    if (isTestMode) {
-      localStorageService.addAccount(data);
-      return;
-    }
     if (!user) return;
     try {
       if (data.isFavorite) {
@@ -1664,11 +1515,6 @@ function AppContent() {
   };
 
   const handleUpdateAccount = async (id: string, data: Partial<Account>) => {
-    if (isTestMode) {
-      localStorageService.updateAccount(id, data);
-      setAccounts(localStorageService.getAccounts());
-      return;
-    }
     if (!user) return;
     try {
       if (data.isFavorite) {
@@ -1702,51 +1548,7 @@ function AppContent() {
    * Estornos viram 'income' e parcelas são agrupadas por groupId.
    */
   const handleImportFatura = async (extractedTransactions: any[], selectedAccountId?: string) => {
-    if (isTestMode) {
-      // Modo Teste: salva no localStorage
-      const accountId = selectedAccountId || accounts.find(acc => acc.type === 'credit' || acc.type === 'hybrid')?.id;
-      if (!accountId) throw new Error('Nenhuma conta encontrada.');
-
-      const creditAccount = accounts.find(acc => acc.id === accountId);
-      const txs = extractedTransactions.map((tx: any) => {
-        const purchaseDate = new Date(tx.date + 'T00:00:00');
-        let dueDate = purchaseDate;
-        if (creditAccount && (creditAccount.type === 'credit' || creditAccount.type === 'hybrid') && creditAccount.closingDay && creditAccount.dueDay) {
-          dueDate = calculateDueDate(purchaseDate, creditAccount.closingDay, creditAccount.dueDay);
-        }
-        const isRefund = tx.type === 'refund';
-        const hasInstallment = tx.installmentNumber && tx.installmentTotal && tx.installmentTotal > 1;
-        const base: any = {
-          accountId,
-          amount: Math.abs(Number(tx.amount) || 0),
-          type: isRefund ? 'income' : 'expense',
-          paymentType: 'credit',
-          category: isRefund ? 'Outros' : (tx.category || 'Outros'),
-          description: String(tx.description || 'Importado'),
-          date: Timestamp.fromDate(purchaseDate),
-          dueDate: Timestamp.fromDate(dueDate),
-          userId: user?.uid || 'test-user-001',
-          createdAt: Timestamp.now(),
-        };
-        if (hasInstallment) {
-          base.installment = Number(tx.installmentNumber);
-          base.totalInstallments = Number(tx.installmentTotal);
-          base.groupId = hashGroupId(tx);
-        }
-        return base;
-      });
-      localStorageService.addTransactions(txs);
-
-      // ✅ Toast de confirmação
-      setToast({
-        message: `✅ ${txs.length} lançamento(s) importado(s) com sucesso!`,
-        type: 'success'
-      });
-
-      // Atualiza o estado imediatamente
-      setTransactions(localStorageService.getTransactions());
-      return;
-    }
+    
 
     if (!user) return;
     try {
@@ -1823,11 +1625,6 @@ function AppContent() {
   };
 
   const handleDeleteAccount = async (id: string) => {
-    if (isTestMode) {
-      localStorageService.deleteAccount(id);
-      setAccounts(localStorageService.getAccounts());
-      return;
-    }
     try {
       await deleteDoc(doc(db, 'accounts', id));
     } catch (error) {
@@ -1836,11 +1633,6 @@ function AppContent() {
   };
 
   const handleUpdateTransaction = async (data: any) => {
-    if (isTestMode) {
-      localStorageService.updateTransaction(data.id, data);
-      setTransactions(localStorageService.getTransactions());
-      return;
-    }
     if (!user || !editingTransaction) return;
     try {
       const { installments, updateFuture, ...baseData } = data;
@@ -1972,12 +1764,6 @@ function AppContent() {
   };
 
   const handleDeleteTransaction = async (id: string) => {
-    if (isTestMode) {
-      localStorageService.deleteTransaction(id);
-      setTransactions(localStorageService.getTransactions());
-      setToast({ message: "Transação excluída com sucesso!", type: 'success' });
-      return;
-    }
     const tx = transactions.find(t => t.id === id);
     if (tx?.groupId) {
       setTransactionToDelete(tx);
@@ -1992,11 +1778,6 @@ function AppContent() {
   };
 
   const handleAddCategory = async (data: Omit<Category, 'id'>) => {
-    if (isTestMode) {
-      localStorageService.addCategory(data);
-      setCustomCategories(localStorageService.getCategories());
-      return;
-    }
     if (!user) return;
     try {
       await addDoc(collection(db, 'categories'), {
@@ -2050,11 +1831,6 @@ function AppContent() {
   };
 
   const handleDeleteCategory = async (id: string) => {
-    if (isTestMode) {
-      localStorageService.deleteCategory(id);
-      setCustomCategories(localStorageService.getCategories());
-      return;
-    }
     try {
       const batch = writeBatch(db);
       
@@ -2222,7 +1998,7 @@ function AppContent() {
               <div className="hidden sm:flex flex-col items-end">
                 <span className="text-sm font-medium">
                   {userProfile?.displayName || user.displayName}
-                  {isTestMode && (
+                  {false && (
                     <span className="ml-2 px-1.5 py-0.5 text-[10px] font-bold bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400 rounded">
                       TESTE
                     </span>
@@ -2231,16 +2007,16 @@ function AppContent() {
                 <span className="text-xs text-slate-500">{user.email}</span>
               </div>
               <button 
-                onClick={toggleTestMode}
+                onClick={() => {}}
                 className={cn(
                   "p-2 rounded-full transition-colors",
-                  isTestMode
+                  false
                     ? "text-amber-600 bg-amber-50 dark:bg-amber-900/30 hover:bg-amber-100 dark:hover:bg-amber-900/50"
                     : "text-slate-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20"
                 )}
-                title={isTestMode ? "Desativar Modo Teste" : "Ativar Modo Teste (bypass Firebase)"}
+                title={false ? "Desativar Modo Teste" : "Ativar Modo Teste (bypass Firebase)"}
               >
-                {isTestMode ? <AlertTriangle className="w-4 h-4" /> : <Shield className="w-4 h-4" />}
+                {false ? <AlertTriangle className="w-4 h-4" /> : <Shield className="w-4 h-4" />}
               </button>
               <button 
                 onClick={logout}
@@ -3250,7 +3026,6 @@ function AppContent() {
                 
                 <FaturaImportModal
                   accounts={accounts}
-                  isTestMode={false}
                   onClose={() => setShowFaturaModal(false)}
                   onImport={handleImportFatura}
                 />

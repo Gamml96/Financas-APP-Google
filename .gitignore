@@ -11,3 +11,4 @@ coverage/
 fatura.pdf
 fatura*.pdf
 *.test.pdf
+.vercel
