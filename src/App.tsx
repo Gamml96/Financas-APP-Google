@@ -172,7 +172,7 @@ import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
 import FaturaImportModal from './components/FaturaImportModal';
-import { hashGroupId, filterDuplicates } from './services/faturaDedup';
+import { hashGroupId, filterDuplicates, transactionKey } from './services/faturaDedup';
 
 // Utility for Tailwind classes
 function cn(...inputs: ClassValue[]) {
@@ -1543,87 +1543,121 @@ function AppContent() {
 
   /**
    * Importa transações extraídas de uma fatura de cartão de crédito (PDF).
-   * As transações são criadas como despesas de tipo 'credit' na conta escolhida.
-   * Parcelas são agrupadas por groupId (hash determinístico) para evitar duplicatas.
-   * Estornos viram 'income' e parcelas são agrupadas por groupId.
+   *
+   * - Deduplica por groupId (parceladas) e por data+descrição+valor (avulsas).
+   * - Estornos viram 'income'.
+   * - Quando a compra é parcelada e a fatura traz a parcela N de M, as parcelas
+   *   seguintes (N+1 ... M) são criadas automaticamente nos meses seguintes,
+   *   no mesmo grupo, para que a próxima fatura reconheça e não duplique.
+   *
+   * @returns resumo da importação (importados, ignorados, parcelas futuras criadas)
    */
-  const handleImportFatura = async (extractedTransactions: any[], selectedAccountId?: string) => {
-    
+  const handleImportFatura = async (
+    extractedTransactions: any[],
+    selectedAccountId?: string,
+    options: { createFutureInstallments?: boolean } = {}
+  ): Promise<{ imported: number; skipped: number; futureInstallments: number }> => {
+    if (!user) throw new Error('Sessão expirada. Faça login novamente.');
 
-    if (!user) return;
+    const accountId = selectedAccountId || accounts.find(acc => acc.type === 'credit' || acc.type === 'hybrid')?.id || accounts[0]?.id;
+    if (!accountId) throw new Error('Nenhuma conta encontrada para vincular as transações.');
+
+    const creditAccount = accounts.find(acc => acc.id === accountId);
+    const createFuture = options.createFutureInstallments !== false;
+
+    // 🔒 Deduplicação: usa o estado `transactions` (populado pelo onSnapshot) como fonte da verdade.
+    const existingGroups = new Set<string>();
+    const existingByDate = new Map<string, boolean>();
+    transactions.forEach((tx: any) => {
+      const total = Number(tx.totalInstallments ?? tx.installmentTotal ?? 0);
+      if (total > 1) existingGroups.add(hashGroupId(tx));
+      existingByDate.set(transactionKey(tx), true);
+    });
+
+    const { newTransactions, skipped } = filterDuplicates(extractedTransactions, existingGroups, existingByDate);
+
+    if (newTransactions.length === 0) {
+      return { imported: 0, skipped: skipped.length, futureInstallments: 0 };
+    }
+
+    const colRef = collection(db, 'transactions');
+    const payloads: any[] = [];
+    let futureInstallments = 0;
+
+    newTransactions.forEach((tx) => {
+      const purchaseDate = new Date(tx.date + 'T00:00:00');
+      const hasClosingInfo = !!creditAccount &&
+        (creditAccount.type === 'credit' || creditAccount.type === 'hybrid') &&
+        !!creditAccount.closingDay && !!creditAccount.dueDay;
+
+      const dueDateFor = (base: Date) =>
+        hasClosingInfo
+          ? calculateDueDate(base, creditAccount!.closingDay!, creditAccount!.dueDay!)
+          : base;
+
+      const isRefund = tx.type === 'refund';
+      const installmentTotal = Number(tx.installmentTotal || 0);
+      const installmentCurrent = Number(tx.installmentNumber || 0);
+      const hasInstallment = installmentTotal > 1 && installmentCurrent > 0;
+
+      const base: any = {
+        accountId,
+        amount: Math.abs(Number(tx.amount) || 0),
+        type: isRefund ? 'income' : 'expense',
+        paymentType: 'credit',
+        category: isRefund ? 'Outros' : (tx.category || 'Outros'),
+        description: String(tx.description || 'Importado'),
+        userId: user.uid,
+        createdAt: Timestamp.now(),
+      };
+
+      if (hasInstallment) {
+        base.groupId = hashGroupId(tx);
+        base.totalInstallments = installmentTotal;
+        base.installment = installmentCurrent;
+      }
+
+      payloads.push({
+        ...base,
+        date: Timestamp.fromDate(purchaseDate),
+        dueDate: Timestamp.fromDate(dueDateFor(purchaseDate)),
+      });
+
+      // 📅 Parcelas futuras: cria N+1 ... M nos meses seguintes
+      if (createFuture && hasInstallment && !isRefund && installmentCurrent < installmentTotal) {
+        for (let n = installmentCurrent + 1; n <= installmentTotal; n++) {
+          const futureDate = addMonths(purchaseDate, n - installmentCurrent);
+          payloads.push({
+            ...base,
+            installment: n,
+            date: Timestamp.fromDate(futureDate),
+            dueDate: Timestamp.fromDate(dueDateFor(futureDate)),
+          });
+          futureInstallments++;
+        }
+      }
+    });
+
+    // Firestore aceita até 500 operações por batch — envia em blocos de 400.
     try {
-      // Usa a conta selecionada pelo usuário, ou a primeira conta de crédito disponível
-      const accountId = selectedAccountId || accounts.find(acc => acc.type === 'credit' || acc.type === 'hybrid')?.id || accounts[0]?.id;
-
-      if (!accountId) {
-        throw new Error('Nenhuma conta encontrada para vincular as transações.');
+      for (let i = 0; i < payloads.length; i += 400) {
+        const batch = writeBatch(db);
+        payloads.slice(i, i + 400).forEach((payload) => {
+          batch.set(doc(colRef), payload);
+        });
+        await batch.commit();
       }
-
-      const creditAccount = accounts.find(acc => acc.id === accountId);
-
-      // 🔒 DEDUPLICAÇÃO: constrói conjuntos de transações já existentes no Firestore
-      // usando o estado `transactions` (já populado pelo listener onSnapshot) como fonte da verdade.
-      const existingGroups = new Set<string>();
-      const existingByDate = new Map<string, boolean>();
-      transactions.forEach((tx: any) => {
-        if (tx.installmentNumber && tx.installmentTotal && tx.installmentTotal > 1) {
-          existingGroups.add(hashGroupId(tx));
-        }
-        const key = `${tx.date}|${(tx.description || '').trim().toLowerCase()}|${Number(tx.amount || 0).toFixed(2)}`;
-        existingByDate.set(key, true);
-      });
-
-      const { newTransactions, skipped } = filterDuplicates(extractedTransactions, existingGroups, existingByDate);
-
-      if (newTransactions.length === 0) {
-        // Usuário será notificado pelo toast no modal
-        return;
-      }
-
-      const batch = writeBatch(db);
-      const colRef = collection(db, 'transactions');
-
-      newTransactions.forEach((tx) => {
-        const purchaseDate = new Date(tx.date + 'T00:00:00');
-        let dueDate = purchaseDate;
-        if (creditAccount && (creditAccount.type === 'credit' || creditAccount.type === 'hybrid') && creditAccount.closingDay && creditAccount.dueDay) {
-          dueDate = calculateDueDate(purchaseDate, creditAccount.closingDay, creditAccount.dueDay);
-        }
-
-        const isRefund = tx.type === 'refund';
-        const hasInstallment = tx.installmentNumber && tx.installmentTotal && tx.installmentTotal > 1;
-
-        const base: any = {
-          accountId,
-          amount: Math.abs(Number(tx.amount) || 0),
-          // Estorno vira income (crédito); tudo o mais é despesa
-          type: isRefund ? 'income' : 'expense',
-          paymentType: 'credit',
-          category: isRefund ? 'Outros' : (tx.category || 'Outros'),
-          description: String(tx.description || 'Importado'),
-          date: Timestamp.fromDate(purchaseDate),
-          dueDate: Timestamp.fromDate(dueDate),
-          userId: user.uid,
-          createdAt: Timestamp.now(),
-        };
-
-        if (hasInstallment) {
-          base.installment = Number(tx.installmentNumber);
-          base.totalInstallments = Number(tx.installmentTotal);
-          // Agrupa parcelas da mesma compra (mesma descrição + total de parcelas + valor)
-          base.groupId = hashGroupId(tx);
-        }
-
-        const docRef = doc(colRef);
-        batch.set(docRef, base);
-      });
-
-      await batch.commit();
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, 'transactions');
+      throw new Error('Não foi possível salvar os lançamentos no banco. Tente novamente.');
     }
-  };
 
+    return {
+      imported: newTransactions.length,
+      skipped: skipped.length,
+      futureInstallments,
+    };
+  };
   const handleDeleteAccount = async (id: string) => {
     try {
       await deleteDoc(doc(db, 'accounts', id));

@@ -16,18 +16,28 @@ import {
 import { cn } from '../utils/cn';
 import { extractFaturaFromPdf, computeNetTotal, FaturaResult, FaturaTransaction } from '../services/faturaService';
 
+export interface ImportSummary {
+  imported: number;
+  skipped: number;
+  futureInstallments: number;
+}
+
 interface FaturaImportModalProps {
   /** Lista de contas do usuário para seleção */
   accounts: Array<{ id: string; name: string; type: string; isFavorite?: boolean }>;
   /** Callback ao confirmar a importação */
-  onImport: (transactions: FaturaTransaction[], accountId: string) => Promise<void>;
+  onImport: (
+    transactions: FaturaTransaction[],
+    accountId: string,
+    options?: { createFutureInstallments?: boolean }
+  ) => Promise<ImportSummary>;
   /** Callback ao fechar o modal */
   onClose: () => void;
   /** Se true, mostra botão "Ver JSON" em vez de importar */
   isTestMode?: boolean;
 }
 
-type Step = 'select' | 'processing' | 'account' | 'preview' | 'error';
+type Step = 'select' | 'processing' | 'account' | 'preview' | 'done' | 'error';
 
 export default function FaturaImportModal({ onClose, onImport, accounts, isTestMode = false }: FaturaImportModalProps) {
   const [step, setStep] = useState<Step>('select');
@@ -36,6 +46,8 @@ export default function FaturaImportModal({ onClose, onImport, accounts, isTestM
   const [error, setError] = useState<string | null>(null);
   const [isImporting, setIsImporting] = useState(false);
   const [selectedAccountId, setSelectedAccountId] = useState<string>('');
+  const [summary, setSummary] = useState<ImportSummary | null>(null);
+  const [createFutureInstallments, setCreateFutureInstallments] = useState(true);
 
   // Filtra apenas contas de crédito/híbridas
   const creditAccounts = accounts.filter(acc => acc.type === 'credit' || acc.type === 'hybrid');
@@ -160,8 +172,9 @@ export default function FaturaImportModal({ onClose, onImport, accounts, isTestM
     }
     setIsImporting(true);
     try {
-      await onImport(result.transactions, selectedAccountId);
-      onClose();
+      const importSummary = await onImport(result.transactions, selectedAccountId, { createFutureInstallments });
+      setSummary(importSummary);
+      setStep('done');
     } catch (err: any) {
       setError('Erro ao importar: ' + (err?.message || String(err)));
       setStep('error');
@@ -169,6 +182,14 @@ export default function FaturaImportModal({ onClose, onImport, accounts, isTestM
       setIsImporting(false);
     }
   };
+
+  // Quantas parcelas futuras serão criadas (N+1 ... M de cada compra parcelada)
+  const futureInstallmentCount = (result?.transactions || []).reduce((acc, tx) => {
+    const total = Number(tx.installmentTotal || 0);
+    const current = Number(tx.installmentNumber || 0);
+    if (tx.type === 'refund' || total <= 1 || current <= 0 || current >= total) return acc;
+    return acc + (total - current);
+  }, 0);
 
   const formatValue = (amount: number) =>
     new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(amount);
@@ -358,6 +379,26 @@ export default function FaturaImportModal({ onClose, onImport, accounts, isTestM
             </div>
           )}
 
+          {/* Parcelas futuras */}
+          {futureInstallmentCount > 0 && (
+            <label className="flex items-start gap-3 p-3 rounded-xl border border-indigo-100 dark:border-indigo-800/50 bg-indigo-50/60 dark:bg-indigo-900/10 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={createFutureInstallments}
+                onChange={(e) => setCreateFutureInstallments(e.target.checked)}
+                className="mt-0.5 h-4 w-4 accent-indigo-600 flex-shrink-0"
+              />
+              <div className="flex-1">
+                <p className="text-xs font-semibold text-slate-900 dark:text-slate-100">
+                  Criar as {futureInstallmentCount} parcelas futuras automaticamente
+                </p>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                  As parcelas seguintes (N+1 até M) das compras parceladas entram nos meses seguintes, no mesmo grupo — assim a próxima fatura não duplica.
+                </p>
+              </div>
+            </label>
+          )}
+
           {/* Lista de transações */}
           <div className="space-y-2">
             <h4 className="font-semibold text-slate-900 dark:text-slate-100 text-sm">Lançamentos detectados</h4>
@@ -522,6 +563,56 @@ export default function FaturaImportModal({ onClose, onImport, accounts, isTestM
         </div>
       )}
 
+      {/* STEP: Done */}
+      {step === 'done' && summary && (
+        <div className="space-y-4">
+          <div className={cn(
+            "p-6 rounded-2xl border text-center",
+            summary.imported > 0
+              ? "bg-emerald-50 dark:bg-emerald-900/20 border-emerald-100 dark:border-emerald-800/50"
+              : "bg-amber-50 dark:bg-amber-900/20 border-amber-100 dark:border-amber-800/50"
+          )}>
+            <div className={cn(
+              "w-12 h-12 mx-auto rounded-full flex items-center justify-center",
+              summary.imported > 0
+                ? "bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400"
+                : "bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400"
+            )}>
+              {summary.imported > 0 ? <CheckCircle2 className="w-6 h-6" /> : <Info className="w-6 h-6" />}
+            </div>
+            <p className="mt-3 font-bold text-slate-900 dark:text-slate-100">
+              {summary.imported > 0 ? 'Importação concluída' : 'Nada novo para importar'}
+            </p>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+              {summary.imported > 0
+                ? `${summary.imported} lançamento(s) adicionado(s) ao extrato.`
+                : `Os ${summary.skipped} lançamentos desta fatura já estavam importados.`}
+            </p>
+          </div>
+
+          <div className="grid grid-cols-3 gap-2">
+            <div className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl border border-slate-100 dark:border-slate-700">
+              <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">Importados</p>
+              <p className="font-bold text-sm text-slate-900 dark:text-slate-100 mt-1">{summary.imported}</p>
+            </div>
+            <div className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl border border-slate-100 dark:border-slate-700">
+              <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">Já existiam</p>
+              <p className="font-bold text-sm text-slate-900 dark:text-slate-100 mt-1">{summary.skipped}</p>
+            </div>
+            <div className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl border border-slate-100 dark:border-slate-700">
+              <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">Parcelas futuras</p>
+              <p className="font-bold text-sm text-slate-900 dark:text-slate-100 mt-1">{summary.futureInstallments}</p>
+            </div>
+          </div>
+
+          {summary.futureInstallments > 0 && (
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 px-1">
+              As parcelas futuras foram lançadas nos meses seguintes. Quando as próximas faturas chegarem, esses lançamentos serão reconhecidos e ignorados automaticamente.
+            </p>
+          )}
+        </div>
+      )}
+
       {/* STEP: Error */}
       {step === 'error' && error && (
         <div className="p-4 bg-rose-50 dark:bg-rose-900/20 border border-rose-100 dark:border-rose-800 text-rose-600 dark:text-rose-400 text-sm rounded-xl space-y-3">
@@ -543,16 +634,26 @@ export default function FaturaImportModal({ onClose, onImport, accounts, isTestM
 
       {/* Ações */}
       <div className="flex gap-3 pt-2">
-        <button
-          onClick={() => {
-            if (step === 'preview') setStep('account');
-            else if (step === 'account') setStep('select');
-            else onClose();
-          }}
-          className="flex-1 py-3 border border-slate-200 dark:border-slate-700 rounded-xl font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all"
-        >
-          {step === 'preview' ? 'Voltar' : step === 'account' ? 'Voltar' : 'Fechar'}
-        </button>
+        {step === 'done' ? (
+          <button
+            onClick={onClose}
+            className="flex-1 py-3 bg-indigo-600 text-white rounded-xl font-semibold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100 dark:shadow-none flex items-center justify-center gap-2"
+          >
+            <CheckCircle2 className="w-4 h-4" />
+            Concluir
+          </button>
+        ) : (
+          <button
+            onClick={() => {
+              if (step === 'preview') setStep('account');
+              else if (step === 'account') setStep('select');
+              else onClose();
+            }}
+            className="flex-1 py-3 border border-slate-200 dark:border-slate-700 rounded-xl font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all"
+          >
+            {step === 'preview' ? 'Voltar' : step === 'account' ? 'Voltar' : 'Fechar'}
+          </button>
+        )}
         {step === 'preview' && (
           <button
             onClick={handleConfirmImport}
