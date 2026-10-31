@@ -173,6 +173,7 @@ import { twMerge } from 'tailwind-merge';
 
 import FaturaImportModal from './components/FaturaImportModal';
 import { hashGroupId, filterDuplicates, transactionKey } from './services/faturaDedup';
+import { buildFaturaSchedule } from './services/faturaSchedule';
 
 // Utility for Tailwind classes
 function cn(...inputs: ClassValue[]) {
@@ -1604,39 +1605,19 @@ function AppContent() {
       (creditAccount.type === 'credit' || creditAccount.type === 'hybrid') &&
       !!creditAccount.closingDay && !!creditAccount.dueDay;
 
-    // Vencimento informado pelo PDF (autoritativo) — todos os lançamentos entram nesta fatura.
-    const parsedInvoiceDue = options.invoiceDueDate ? parseISO(options.invoiceDueDate) : null;
-    const invoiceDue = parsedInvoiceDue && !isNaN(parsedInvoiceDue.getTime())
-      ? startOfDay(parsedInvoiceDue)
-      : null;
+    // Fallback: estima o vencimento pelo fechamento do cartão quando o PDF não traz a data.
+    const estimateDueDate = hasClosingInfo
+      ? (base: Date) =>
+          calculateDueDate(base, creditAccount!.closingDay!, creditAccount!.dueDay!)
+      : undefined;
 
     newTransactions.forEach((tx) => {
-      const purchaseDate = new Date(tx.date + 'T00:00:00');
-
       const isRefund = tx.type === 'refund';
-      const installmentTotal = Number(tx.installmentTotal || 0);
-      const installmentCurrent = Number(tx.installmentNumber || 0);
-      const hasInstallment = installmentTotal > 1 && installmentCurrent > 0;
-
-      /**
-       * Vencimento da parcela N.
-       * - Se o PDF informou o vencimento da fatura: a parcela atual cai nela e as futuras avançam mês a mês.
-       * - Senão, estima pelo dia de fechamento do cartão, deslocando pela posição da parcela
-       *   (5/6 de uma compra de maio cai na fatura de outubro, e não na de junho).
-       */
-      const dueFor = (installmentNumber: number) => {
-        if (invoiceDue) {
-          const offset = hasInstallment ? Math.max(0, installmentNumber - installmentCurrent) : 0;
-          return addMonths(invoiceDue, offset);
-        }
-        if (!hasClosingInfo) return purchaseDate;
-        const offset = Math.max(0, installmentNumber - 1);
-        return calculateDueDate(
-          addMonths(purchaseDate, offset),
-          creditAccount!.closingDay!,
-          creditAccount!.dueDay!
-        );
-      };
+      const schedule = buildFaturaSchedule(tx, {
+        invoiceDueDate: options.invoiceDueDate,
+        createFutureInstallments: createFuture,
+        estimateDueDate,
+      });
 
       const base: any = {
         accountId,
@@ -1649,30 +1630,28 @@ function AppContent() {
         createdAt: Timestamp.now(),
       };
 
-      if (hasInstallment) {
+      if (schedule.hasInstallment) {
         base.groupId = hashGroupId(tx);
-        base.totalInstallments = installmentTotal;
-        base.installment = installmentCurrent;
+        base.totalInstallments = schedule.current.totalInstallments;
+        base.installment = schedule.current.installment;
       }
 
       payloads.push({
         ...base,
-        date: Timestamp.fromDate(purchaseDate),
-        dueDate: Timestamp.fromDate(dueFor(hasInstallment ? installmentCurrent : 1)),
+        date: Timestamp.fromDate(schedule.current.date),
+        dueDate: Timestamp.fromDate(schedule.current.dueDate),
       });
 
       // 📅 Parcelas futuras: cria N+1 ... M nas faturas seguintes
-      if (createFuture && hasInstallment && !isRefund && installmentCurrent < installmentTotal) {
-        for (let n = installmentCurrent + 1; n <= installmentTotal; n++) {
-          payloads.push({
-            ...base,
-            installment: n,
-            date: Timestamp.fromDate(purchaseDate),
-            dueDate: Timestamp.fromDate(dueFor(n)),
-          });
-          futureInstallments++;
-        }
-      }
+      schedule.future.forEach((entry) => {
+        payloads.push({
+          ...base,
+          installment: entry.installment,
+          date: Timestamp.fromDate(entry.date),
+          dueDate: Timestamp.fromDate(entry.dueDate),
+        });
+        futureInstallments++;
+      });
     });
 
     // Firestore aceita até 500 operações por batch — envia em blocos de 400.
