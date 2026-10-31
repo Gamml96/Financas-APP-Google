@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as pdfjs from 'pdfjs-dist';
-import { buildLines, type PdfTextItem } from './src/services/pdfLines';
-import { parseFatura } from './src/services/faturaParser';
+import { buildLines, type PdfTextItem } from '../../src/services/pdfLines';
+import { parseFatura } from '../../src/services/faturaParser';
 
 const pdfPath = process.argv[2];
 if (!pdfPath) throw new Error('uso: npx tsx test-parser-file.ts <arquivo.pdf>');
