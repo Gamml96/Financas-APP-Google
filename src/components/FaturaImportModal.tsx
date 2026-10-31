@@ -921,7 +921,7 @@ export default function FaturaImportModal({ onClose, onImport, accounts, categor
           >
             Tentar novamente
           </button>
-          {extractedRawText && extractedRawText.replace(/===== PÁGINA \\d+ =====/g, '').trim().length > 50 && (
+          {extractedRawText && !error?.includes('imagem') && extractedRawText.replace(/===== PÁGINA \\d+ =====/g, '').trim().length > 50 && (
             <button
               onClick={async () => {
                 try {
