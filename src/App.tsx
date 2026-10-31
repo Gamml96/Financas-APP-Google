@@ -956,6 +956,12 @@ function AppContent() {
     return [...DEFAULT_CATEGORIES, ...customCategories];
   }, [customCategories]);
 
+  // Categorias usadas na importação de fatura (a IA só escolhe entre as do usuário)
+  const faturaCategories = useMemo(
+    () => Array.from(new Set(allCategories.filter(c => c.type !== 'income').map(c => c.name))),
+    [allCategories]
+  );
+
   // Calculations
   const filteredTransactions = useMemo(() => {
     let start: Date;
@@ -3060,6 +3066,7 @@ function AppContent() {
                 
                 <FaturaImportModal
                   accounts={accounts}
+                  categories={faturaCategories}
                   onClose={() => setShowFaturaModal(false)}
                   onImport={handleImportFatura}
                 />

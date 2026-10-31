@@ -25,6 +25,8 @@ export interface ImportSummary {
 interface FaturaImportModalProps {
   /** Lista de contas do usuário para seleção */
   accounts: Array<{ id: string; name: string; type: string; isFavorite?: boolean }>;
+  /** Categorias cadastradas pelo usuário (usadas pela IA e nos selects de edição) */
+  categories?: string[];
   /** Callback ao confirmar a importação */
   onImport: (
     transactions: FaturaTransaction[],
@@ -39,7 +41,17 @@ interface FaturaImportModalProps {
 
 type Step = 'select' | 'processing' | 'account' | 'preview' | 'done' | 'error';
 
-export default function FaturaImportModal({ onClose, onImport, accounts, isTestMode = false }: FaturaImportModalProps) {
+/** Etapas mostradas enquanto a IA processa a fatura (dá noção de progresso). */
+const PROCESSING_STEPS = [
+  'Lendo o PDF da fatura...',
+  'Identificando os lançamentos...',
+  'Separando compras, encargos e estornos...',
+  'Conferindo as parcelas de cada compra...',
+  'Categorizando os estabelecimentos...',
+  'Quase lá: organizando o resultado...',
+];
+
+export default function FaturaImportModal({ onClose, onImport, accounts, categories = [], isTestMode = false }: FaturaImportModalProps) {
   const [step, setStep] = useState<Step>('select');
   const [file, setFile] = useState<File | null>(null);
   const [result, setResult] = useState<FaturaResult | null>(null);
@@ -48,9 +60,14 @@ export default function FaturaImportModal({ onClose, onImport, accounts, isTestM
   const [selectedAccountId, setSelectedAccountId] = useState<string>('');
   const [summary, setSummary] = useState<ImportSummary | null>(null);
   const [createFutureInstallments, setCreateFutureInstallments] = useState(true);
+  const [processingStep, setProcessingStep] = useState(0);
 
   // Filtra apenas contas de crédito/híbridas
   const creditAccounts = accounts.filter(acc => acc.type === 'credit' || acc.type === 'hybrid');
+  // Categorias do usuário (fallback para as padrão quando ainda não carregaram)
+  const categoryOptions = categories.length > 0
+    ? categories
+    : ['Alimentação', 'Transporte', 'Compras', 'Entretenimento', 'Saúde', 'Aluguel', 'Encargos', 'Outros'];
   // Se houver uma conta favorita de crédito, seleciona automaticamente
   const defaultAccount = accounts.find(acc => (acc.type === 'credit' || acc.type === 'hybrid') && acc.isFavorite)?.id || creditAccounts[0]?.id || '';
 
@@ -59,6 +76,18 @@ export default function FaturaImportModal({ onClose, onImport, accounts, isTestM
       setSelectedAccountId(defaultAccount);
     }
   }, [defaultAccount, selectedAccountId]);
+
+  // Avança as etapas do processamento enquanto a IA trabalha
+  useEffect(() => {
+    if (step !== 'processing') {
+      setProcessingStep(0);
+      return;
+    }
+    const interval = setInterval(() => {
+      setProcessingStep((current) => Math.min(current + 1, PROCESSING_STEPS.length - 1));
+    }, 7000);
+    return () => clearInterval(interval);
+  }, [step]);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const selected = e.target.files?.[0];
@@ -82,7 +111,7 @@ export default function FaturaImportModal({ onClose, onImport, accounts, isTestM
     setStep('processing');
 
     try {
-      const extracted = await extractFaturaFromPdf(selected);
+      const extracted = await extractFaturaFromPdf(selected, { categories: categoryOptions });
       setResult(extracted);
 
       if (extracted.transactions.length === 0) {
@@ -255,11 +284,29 @@ export default function FaturaImportModal({ onClose, onImport, accounts, isTestM
               <Sparkles className="w-8 h-8 text-indigo-600 dark:text-indigo-400 animate-pulse" />
               <div className="absolute inset-0 rounded-full border-4 border-indigo-200 dark:border-indigo-800 animate-ping opacity-50"></div>
             </motion.div>
-            <div>
-              <p className="font-bold text-slate-900 dark:text-slate-100">IA analisando sua fatura...</p>
-              <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-                Pode levar de 5 a 15 segundos dependendo do tamanho do PDF.
+            <div className="space-y-2">
+              <p className="font-bold text-slate-900 dark:text-slate-100">
+                {PROCESSING_STEPS[processingStep]}
               </p>
+              <p className="text-sm text-slate-500 dark:text-slate-400">
+                Isso pode levar <strong className="text-slate-700 dark:text-slate-300">até 1 minuto</strong> — faturas com muitos lançamentos demoram mais.
+              </p>
+              <p className="text-xs text-slate-400 dark:text-slate-500">
+                Não feche esta janela: o resultado aparece aqui automaticamente assim que terminar.
+              </p>
+            </div>
+            <div className="flex items-center gap-1.5">
+              {PROCESSING_STEPS.map((_, i) => (
+                <span
+                  key={i}
+                  className={cn(
+                    'h-1.5 rounded-full transition-all duration-500',
+                    i <= processingStep
+                      ? 'w-6 bg-indigo-500'
+                      : 'w-3 bg-slate-200 dark:bg-slate-700'
+                  )}
+                />
+              ))}
             </div>
             <div className="flex items-center gap-2 text-xs text-slate-400">
               <Loader2 className="w-4 h-4 animate-spin" />
@@ -499,14 +546,9 @@ export default function FaturaImportModal({ onClose, onImport, accounts, isTestM
                               onChange={(e) => setEditForm({ ...editForm, category: e.target.value })}
                               className="w-full text-xs px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
                             >
-                              <option value="Alimentação">Alimentação</option>
-                              <option value="Transporte">Transporte</option>
-                              <option value="Compras">Compras</option>
-                              <option value="Entretenimento">Entretenimento</option>
-                              <option value="Saúde">Saúde</option>
-                              <option value="Aluguel">Aluguel</option>
-                              <option value="Encargos">Encargos</option>
-                              <option value="Outros">Outros</option>
+                              {categoryOptions.map((cat) => (
+                                <option key={cat} value={cat}>{cat}</option>
+                              ))}
                             </select>
                           </div>
                           <div>
