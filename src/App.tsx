@@ -13,6 +13,7 @@ import {
   doc, 
   setDoc, 
   getDoc, 
+  getDocs,
   query, 
   where, 
   onSnapshot, 
@@ -1582,20 +1583,39 @@ function AppContent() {
     const creditAccount = accounts.find(acc => acc.id === accountId);
     const createFuture = options.createFutureInstallments !== false;
 
-    // 🔒 Deduplicação: usa o estado `transactions` (populado pelo onSnapshot) como fonte da verdade.
+    // 🔒 Deduplicação: lê as transações existentes DIRETO do Firestore (não do estado
+    // React), para não depender do timing do onSnapshot — se a importação anterior
+    // acabou de gravar as parcelas futuras, o estado pode ainda estar desatualizado.
     const existingGroups = new Map<string, number[]>();
     const existingByDate = new Map<string, boolean>();
-    transactions.forEach((tx: any) => {
-      const total = Number(tx.totalInstallments ?? tx.installmentTotal ?? 0);
-      if (total > 1) {
-        const key = hashGroupId(tx);
-        const amt = Number(tx.amount || 0);
-        const list = existingGroups.get(key) || [];
-        if (!list.some((a) => Math.abs(a - amt) < 0.005)) list.push(amt);
-        existingGroups.set(key, list);
-      }
-      existingByDate.set(transactionKey(tx), true);
-    });
+    try {
+      const snap = await getDocs(query(collection(db, 'transactions'), where('userId', '==', user.uid)));
+      snap.forEach((docSnap) => {
+        const tx: any = { id: docSnap.id, ...docSnap.data() };
+        const total = Number(tx.totalInstallments ?? tx.installmentTotal ?? 0);
+        if (total > 1) {
+          const key = hashGroupId(tx);
+          const amt = Number(tx.amount || 0);
+          const list = existingGroups.get(key) || [];
+          if (!list.some((a) => Math.abs(a - amt) < 0.005)) list.push(amt);
+          existingGroups.set(key, list);
+        }
+        existingByDate.set(transactionKey(tx), true);
+      });
+    } catch (e) {
+      console.warn('[dedup] falha ao ler Firestore, usando estado local:', e);
+      transactions.forEach((tx: any) => {
+        const total = Number(tx.totalInstallments ?? tx.installmentTotal ?? 0);
+        if (total > 1) {
+          const key = hashGroupId(tx);
+          const amt = Number(tx.amount || 0);
+          const list = existingGroups.get(key) || [];
+          if (!list.some((a) => Math.abs(a - amt) < 0.005)) list.push(amt);
+          existingGroups.set(key, list);
+        }
+        existingByDate.set(transactionKey(tx), true);
+      });
+    }
 
     const { newTransactions, skipped } = filterDuplicates(extractedTransactions, existingGroups, existingByDate);
     console.log('[dedup] existingGroups:', [...existingGroups.entries()]);
