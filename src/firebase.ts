@@ -49,6 +49,9 @@ if (typeof window !== 'undefined') {
 }
 
 const googleProvider = new GoogleAuthProvider();
+// Sempre mostra o seletor de contas do Google (permite escolher "Usar outra conta"),
+// em vez de entrar direto com a última conta usada no navegador.
+googleProvider.setCustomParameters({ prompt: 'select_account' });
 
 export const signInWithGoogle = () => signInWithPopup(auth, googleProvider);
 export const logout = () => signOut(auth);
