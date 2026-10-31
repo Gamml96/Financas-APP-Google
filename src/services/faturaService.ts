@@ -48,13 +48,13 @@ export function computeNetTotal(transactions: FaturaTransaction[]): number {
  * Extrai os lançamentos de uma fatura em PDF.
  *
  * @param file       PDF escolhido pelo usuário
- * @param options    categorias cadastradas pelo usuário (as sugeridas são encaixadas nelas)
+ * @param options    categorias do usuário (as sugeridas são encaixadas nelas) e senha do PDF
  */
 export async function extractFaturaFromPdf(
   file: File,
-  options: { categories?: string[] } = {}
+  options: { categories?: string[]; password?: string } = {}
 ): Promise<FaturaResult> {
-  const pages = await extractPdfPages(file);
+  const pages = await extractPdfPages(file, options.password);
   const parsed = parseFatura(pages);
 
   // PDF gerado por impressão ("Microsoft Print to PDF", scanner, foto) vira

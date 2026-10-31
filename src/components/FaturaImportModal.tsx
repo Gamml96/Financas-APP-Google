@@ -13,6 +13,7 @@ import {
   Info,
   Edit,
   Calendar,
+  Lock,
 } from 'lucide-react';
 import { cn } from '../utils/cn';
 import { extractFaturaFromPdf, computeNetTotal, FaturaResult, FaturaTransaction } from '../services/faturaService';
@@ -44,7 +45,7 @@ interface FaturaImportModalProps {
   isTestMode?: boolean;
 }
 
-type Step = 'select' | 'processing' | 'account' | 'preview' | 'done' | 'error';
+type Step = 'select' | 'password' | 'processing' | 'account' | 'preview' | 'done' | 'error';
 
 /** Etapas mostradas durante a leitura local (é rápido, mas o PDF pode ter várias páginas). */
 const PROCESSING_STEPS = [
@@ -64,6 +65,9 @@ export default function FaturaImportModal({ onClose, onImport, accounts, categor
   const [createFutureInstallments, setCreateFutureInstallments] = useState(true);
   const [processingStep, setProcessingStep] = useState(0);
   const [invoiceDueDate, setInvoiceDueDate] = useState('');
+  /** Senha do PDF, quando o banco protege a fatura */
+  const [pdfPassword, setPdfPassword] = useState('');
+  const [passwordIncorrect, setPasswordIncorrect] = useState(false);
 
   // Filtra apenas contas de crédito/híbridas
   const creditAccounts = accounts.filter(acc => acc.type === 'credit' || acc.type === 'hybrid');
@@ -92,6 +96,40 @@ export default function FaturaImportModal({ onClose, onImport, accounts, categor
     return () => clearInterval(interval);
   }, [step]);
 
+  /** Lê o PDF (com ou sem senha) e avança para a escolha da conta. */
+  const runExtraction = async (selected: File, password?: string) => {
+    setError(null);
+    setResult(null);
+    setStep('processing');
+
+    try {
+      const extracted = await extractFaturaFromPdf(selected, {
+        categories: categoryOptions,
+        password,
+      });
+      setResult(extracted);
+      setInvoiceDueDate(extracted.invoiceDueDate || '');
+      setPasswordIncorrect(false);
+
+      if (extracted.transactions.length === 0) {
+        setError('Nenhum lançamento foi extraído da fatura. Verifique se o PDF está legível (com texto selecionável, não imagem).');
+        setStep('error');
+        return;
+      }
+
+      setStep('account');
+    } catch (err: any) {
+      // Fatura protegida: pede a senha em vez de mostrar erro
+      if (err?.name === 'PdfPasswordError') {
+        setPasswordIncorrect(Boolean(err.incorrect));
+        setStep('password');
+        return;
+      }
+      setError(err?.message || String(err));
+      setStep('error');
+    }
+  };
+
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const selected = e.target.files?.[0];
     if (!selected) return;
@@ -109,26 +147,16 @@ export default function FaturaImportModal({ onClose, onImport, accounts, categor
     }
 
     setFile(selected);
-    setError(null);
-    setResult(null);
-    setStep('processing');
+    setPdfPassword('');
+    setPasswordIncorrect(false);
+    await runExtraction(selected);
+  };
 
-    try {
-      const extracted = await extractFaturaFromPdf(selected, { categories: categoryOptions });
-      setResult(extracted);
-      setInvoiceDueDate(extracted.invoiceDueDate || '');
-
-      if (extracted.transactions.length === 0) {
-        setError('Nenhum lançamento foi extraído da fatura. Verifique se o PDF está legível (com texto selecionável, não imagem).');
-        setStep('error');
-        return;
-      }
-
-      setStep('account');
-    } catch (err: any) {
-      setError(err?.message || String(err));
-      setStep('error');
-    }
+  /** Reabre o mesmo PDF usando a senha digitada. */
+  const handlePasswordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!file || !pdfPassword.trim()) return;
+    await runExtraction(file, pdfPassword.trim());
   };
 
   const removeTransaction = (index: number) => {
@@ -272,6 +300,83 @@ export default function FaturaImportModal({ onClose, onImport, accounts, categor
             </span>
           </div>
         </div>
+      )}
+
+      {/* STEP: Password (faturas protegidas) */}
+      {step === 'password' && (
+        <form onSubmit={handlePasswordSubmit} className="space-y-4">
+          <div className="bg-amber-50 dark:bg-amber-900/20 p-4 rounded-xl border border-amber-200 dark:border-amber-800/50 flex items-start gap-3">
+            <Lock className="w-5 h-5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
+            <div className="text-sm">
+              <p className="font-semibold text-slate-900 dark:text-slate-100">
+                Esta fatura está protegida por senha
+              </p>
+              <p className="text-slate-600 dark:text-slate-400 mt-1 text-xs leading-relaxed">
+                É o banco que protege o arquivo. Costuma ser o seu <strong>CPF (só números)</strong> ou a
+                data de nascimento — o próprio banco informa no e-mail ou na tela de download.
+              </p>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <label
+              htmlFor="fatura-pdf-password"
+              className="text-xs font-semibold text-slate-600 dark:text-slate-400"
+            >
+              Senha do PDF
+            </label>
+            <input
+              id="fatura-pdf-password"
+              type="password"
+              value={pdfPassword}
+              onChange={(e) => setPdfPassword(e.target.value)}
+              autoFocus
+              autoComplete="off"
+              placeholder="Digite a senha do arquivo"
+              className={cn(
+                'w-full px-3 py-2.5 rounded-xl border text-sm bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100',
+                passwordIncorrect
+                  ? 'border-rose-400 dark:border-rose-600'
+                  : 'border-slate-200 dark:border-slate-700'
+              )}
+            />
+            {passwordIncorrect && (
+              <p className="text-xs text-rose-600 dark:text-rose-400">
+                Senha incorreta. Confira e tente novamente.
+              </p>
+            )}
+            <p className="text-[11px] text-slate-400 dark:text-slate-500">
+              A senha é usada só aqui, no seu navegador, para abrir o arquivo. Ela não é salva nem enviada
+              para lugar nenhum.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setStep('select');
+                setPdfPassword('');
+                setPasswordIncorrect(false);
+              }}
+              className="flex-1 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+            >
+              Outro arquivo
+            </button>
+            <button
+              type="submit"
+              disabled={!pdfPassword.trim()}
+              className="flex-1 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-semibold transition-colors flex items-center justify-center gap-2"
+            >
+              <Lock className="w-4 h-4" />
+              Abrir fatura
+            </button>
+          </div>
+
+          <p className="text-xs text-slate-500 dark:text-slate-400 text-center">
+            Arquivo: <span className="font-medium text-slate-600 dark:text-slate-300">{file?.name}</span>
+          </p>
+        </form>
       )}
 
       {/* STEP: Processing */}
