@@ -103,6 +103,8 @@ export interface FaturaResult {
   bankName: string;
   statementPeriodStart?: string;
   statementPeriodEnd?: string;
+  /** Data de vencimento desta fatura (YYYY-MM-DD) — define em qual fatura os lançamentos entram */
+  invoiceDueDate?: string;
   totalInvoiceAmount?: number;
   transactions: FaturaTransaction[];
   warnings?: string[];
@@ -178,6 +180,7 @@ function buildSystemInstruction(categories: string[]): string {
     '- bankName: nome do banco emissor (ex: BTG Pactual)',
     '- statementPeriodStart: data de início do período da fatura (YYYY-MM-DD)',
     '- statementPeriodEnd: data de fim do período da fatura (YYYY-MM-DD)',
+    '- invoiceDueDate: data de VENCIMENTO desta fatura (YYYY-MM-DD) — é a data em que a fatura é cobrada, normalmente no rodapé/cabeçalho do PDF. NÃO é a data das compras.',
     '- totalInvoiceAmount: valor total final cobrado na fatura (se disponível)',
     '- transactions: lista de todos os lançamentos de compra, tarifas e juros do usuário',
     '- warnings: (opcional) alertas de estornos/cancelamentos compensados ou ambiguidades',
@@ -286,6 +289,7 @@ export async function extractFaturaFromPdf(
         bankName: { type: Type.STRING },
         statementPeriodStart: { type: Type.STRING },
         statementPeriodEnd: { type: Type.STRING },
+        invoiceDueDate: { type: Type.STRING },
         totalInvoiceAmount: { type: Type.NUMBER },
         transactions: {
           type: Type.ARRAY,
@@ -335,6 +339,13 @@ export async function extractFaturaFromPdf(
   }
 
   // Sanitização
+  const isoDate = (v: any) =>
+    /^\d{4}-\d{2}-\d{2}/.test(String(v || '')) ? String(v).slice(0, 10) : undefined;
+
+  parsed.invoiceDueDate = isoDate(parsed.invoiceDueDate);
+  parsed.statementPeriodStart = isoDate(parsed.statementPeriodStart);
+  parsed.statementPeriodEnd = isoDate(parsed.statementPeriodEnd);
+
   parsed.transactions = parsed.transactions
     .map((t: any) => ({
       date: String(t.date || '').slice(0, 10),

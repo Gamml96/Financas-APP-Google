@@ -12,6 +12,7 @@ import {
   X,
   Info,
   Edit,
+  Calendar,
 } from 'lucide-react';
 import { cn } from '../utils/cn';
 import { extractFaturaFromPdf, computeNetTotal, FaturaResult, FaturaTransaction } from '../services/faturaService';
@@ -31,7 +32,11 @@ interface FaturaImportModalProps {
   onImport: (
     transactions: FaturaTransaction[],
     accountId: string,
-    options?: { createFutureInstallments?: boolean }
+    options?: {
+      createFutureInstallments?: boolean;
+      invoiceDueDate?: string;
+      statementPeriodEnd?: string;
+    }
   ) => Promise<ImportSummary>;
   /** Callback ao fechar o modal */
   onClose: () => void;
@@ -201,7 +206,11 @@ export default function FaturaImportModal({ onClose, onImport, accounts, categor
     }
     setIsImporting(true);
     try {
-      const importSummary = await onImport(result.transactions, selectedAccountId, { createFutureInstallments });
+      const importSummary = await onImport(result.transactions, selectedAccountId, {
+        createFutureInstallments,
+        invoiceDueDate: result.invoiceDueDate,
+        statementPeriodEnd: result.statementPeriodEnd,
+      });
       setSummary(importSummary);
       setStep('done');
     } catch (err: any) {
@@ -411,6 +420,24 @@ export default function FaturaImportModal({ onClose, onImport, accounts, categor
               </div>
               <p className="font-bold text-sm text-slate-900 dark:text-slate-100 mt-1 truncate">{formatValue(formatTotal(result.transactions))}</p>
             </div>
+          </div>
+
+          {/* Vencimento da fatura importada */}
+          <div className="flex items-start gap-2 text-xs bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl border border-slate-100 dark:border-slate-700">
+            <Calendar className="w-4 h-4 mt-0.5 text-indigo-500 flex-shrink-0" />
+            <span className="text-slate-600 dark:text-slate-400">
+              {result.invoiceDueDate ? (
+                <>
+                  Fatura com vencimento em{' '}
+                  <strong className="text-slate-900 dark:text-slate-100">
+                    {result.invoiceDueDate.split('-').reverse().join('/')}
+                  </strong>{' '}
+                  — os lançamentos entram nessa fatura, mesmo os parcelados antigos (ex.: 5/6 de uma compra de maio).
+                </>
+              ) : (
+                <>Vencimento não identificado no PDF — o mês será estimado pelo fechamento do cartão.</>
+              )}
+            </span>
           </div>
 
           {/* Warnings */}

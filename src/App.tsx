@@ -1565,7 +1565,13 @@ function AppContent() {
   const handleImportFatura = async (
     extractedTransactions: any[],
     selectedAccountId?: string,
-    options: { createFutureInstallments?: boolean } = {}
+    options: {
+      createFutureInstallments?: boolean;
+      /** Vencimento da fatura importada (YYYY-MM-DD) — define em qual fatura os lançamentos entram */
+      invoiceDueDate?: string;
+      /** Fim do período da fatura (fallback quando o vencimento não vem no PDF) */
+      statementPeriodEnd?: string;
+    } = {}
   ): Promise<{ imported: number; skipped: number; futureInstallments: number }> => {
     if (!user) throw new Error('Sessão expirada. Faça login novamente.');
 
@@ -1594,21 +1600,43 @@ function AppContent() {
     const payloads: any[] = [];
     let futureInstallments = 0;
 
+    const hasClosingInfo = !!creditAccount &&
+      (creditAccount.type === 'credit' || creditAccount.type === 'hybrid') &&
+      !!creditAccount.closingDay && !!creditAccount.dueDay;
+
+    // Vencimento informado pelo PDF (autoritativo) — todos os lançamentos entram nesta fatura.
+    const parsedInvoiceDue = options.invoiceDueDate ? parseISO(options.invoiceDueDate) : null;
+    const invoiceDue = parsedInvoiceDue && !isNaN(parsedInvoiceDue.getTime())
+      ? startOfDay(parsedInvoiceDue)
+      : null;
+
     newTransactions.forEach((tx) => {
       const purchaseDate = new Date(tx.date + 'T00:00:00');
-      const hasClosingInfo = !!creditAccount &&
-        (creditAccount.type === 'credit' || creditAccount.type === 'hybrid') &&
-        !!creditAccount.closingDay && !!creditAccount.dueDay;
-
-      const dueDateFor = (base: Date) =>
-        hasClosingInfo
-          ? calculateDueDate(base, creditAccount!.closingDay!, creditAccount!.dueDay!)
-          : base;
 
       const isRefund = tx.type === 'refund';
       const installmentTotal = Number(tx.installmentTotal || 0);
       const installmentCurrent = Number(tx.installmentNumber || 0);
       const hasInstallment = installmentTotal > 1 && installmentCurrent > 0;
+
+      /**
+       * Vencimento da parcela N.
+       * - Se o PDF informou o vencimento da fatura: a parcela atual cai nela e as futuras avançam mês a mês.
+       * - Senão, estima pelo dia de fechamento do cartão, deslocando pela posição da parcela
+       *   (5/6 de uma compra de maio cai na fatura de outubro, e não na de junho).
+       */
+      const dueFor = (installmentNumber: number) => {
+        if (invoiceDue) {
+          const offset = hasInstallment ? Math.max(0, installmentNumber - installmentCurrent) : 0;
+          return addMonths(invoiceDue, offset);
+        }
+        if (!hasClosingInfo) return purchaseDate;
+        const offset = Math.max(0, installmentNumber - 1);
+        return calculateDueDate(
+          addMonths(purchaseDate, offset),
+          creditAccount!.closingDay!,
+          creditAccount!.dueDay!
+        );
+      };
 
       const base: any = {
         accountId,
@@ -1630,18 +1658,17 @@ function AppContent() {
       payloads.push({
         ...base,
         date: Timestamp.fromDate(purchaseDate),
-        dueDate: Timestamp.fromDate(dueDateFor(purchaseDate)),
+        dueDate: Timestamp.fromDate(dueFor(hasInstallment ? installmentCurrent : 1)),
       });
 
-      // 📅 Parcelas futuras: cria N+1 ... M nos meses seguintes
+      // 📅 Parcelas futuras: cria N+1 ... M nas faturas seguintes
       if (createFuture && hasInstallment && !isRefund && installmentCurrent < installmentTotal) {
         for (let n = installmentCurrent + 1; n <= installmentTotal; n++) {
-          const futureDate = addMonths(purchaseDate, n - installmentCurrent);
           payloads.push({
             ...base,
             installment: n,
-            date: Timestamp.fromDate(futureDate),
-            dueDate: Timestamp.fromDate(dueDateFor(futureDate)),
+            date: Timestamp.fromDate(purchaseDate),
+            dueDate: Timestamp.fromDate(dueFor(n)),
           });
           futureInstallments++;
         }
