@@ -20,10 +20,16 @@ const extracted = [
   { date: '2026-10-07', description: 'Padaria', amount: 22.5, category: 'Alimentação', type: 'purchase' as const },
 ];
 
-const groups = new Set<string>();
+const groups = new Map<string, number[]>();
 const byDate = new Map<string, boolean>();
 saved.forEach((tx: any) => {
-  if (Number(tx.totalInstallments) > 1) groups.add(hashGroupId(tx));
+  if (Number(tx.totalInstallments) > 1) {
+    const key = hashGroupId(tx);
+    const amt = Number(tx.amount || 0);
+    const list = groups.get(key) || [];
+    if (!list.some((a) => Math.abs(a - amt) < 0.005)) list.push(amt);
+    groups.set(key, list);
+  }
   byDate.set(transactionKey(tx), true);
 });
 

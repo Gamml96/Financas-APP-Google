@@ -1583,11 +1583,17 @@ function AppContent() {
     const createFuture = options.createFutureInstallments !== false;
 
     // 🔒 Deduplicação: usa o estado `transactions` (populado pelo onSnapshot) como fonte da verdade.
-    const existingGroups = new Set<string>();
+    const existingGroups = new Map<string, number[]>();
     const existingByDate = new Map<string, boolean>();
     transactions.forEach((tx: any) => {
       const total = Number(tx.totalInstallments ?? tx.installmentTotal ?? 0);
-      if (total > 1) existingGroups.add(hashGroupId(tx));
+      if (total > 1) {
+        const key = hashGroupId(tx);
+        const amt = Number(tx.amount || 0);
+        const list = existingGroups.get(key) || [];
+        if (!list.some((a) => Math.abs(a - amt) < 0.005)) list.push(amt);
+        existingGroups.set(key, list);
+      }
       existingByDate.set(transactionKey(tx), true);
     });
 

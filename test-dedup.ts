@@ -14,8 +14,8 @@ const extracted: FaturaTransaction[] = [
 ];
 
 // Simula transações já existentes no Firestore (já importadas na fatura anterior)
-const existingGroups = new Set<string>([
-  hashGroupId({ date: '2026-08-12', description: 'C&a', amount: 119.99, category: 'Compras', type: 'purchase', installmentNumber: 1, installmentTotal: 3 }),
+const existingGroups = new Map<string, number[]>([
+  [hashGroupId({ date: '2026-08-12', description: 'C&a', amount: 119.99, category: 'Compras', type: 'purchase', installmentNumber: 1, installmentTotal: 3 }), [119.99]],
 ]);
 const existingByDate = new Map<string, boolean>([
   ['2026-09-09|uber|50.21', true],  // Uber já importada
