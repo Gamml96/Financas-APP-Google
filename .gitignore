@@ -12,3 +12,8 @@ fatura.pdf
 fatura*.pdf
 *.test.pdf
 .vercel
+
+# Ferramentas locais de análise de fatura
+.venv-tools/
+relatorios/
+fatura-raw.txt
