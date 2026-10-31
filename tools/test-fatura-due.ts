@@ -7,8 +7,8 @@ const pdfPath = 'C:/Users/Usuario/Documents/Financas-APP-Google/fatura.pdf';
 const buf = fs.readFileSync(pdfPath);
 const file = new File([buf], 'fatura.pdf', { type: 'application/pdf' });
 
-const { extractFaturaFromPdf } = await import('./src/services/faturaService.ts');
-const { buildFaturaSchedule } = await import('./src/services/faturaSchedule.ts');
+const { extractFaturaFromPdf } = await import('../src/services/faturaService.ts');
+const { buildFaturaSchedule } = await import('../src/services/faturaSchedule.ts');
 
 const r = await extractFaturaFromPdf(file, {
   categories: ['Alimentação', 'Transporte', 'Compras', 'Entretenimento', 'Saúde', 'Aluguel', 'Encargos', 'Outros'],

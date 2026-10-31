@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as pdfjs from 'pdfjs-dist';
-import { buildLines, type PdfTextItem } from './src/services/pdfLines';
-import { parseFatura, projectNextInvoice } from './src/services/faturaParser';
+import { buildLines, type PdfTextItem } from '../src/services/pdfLines';
+import { parseFatura, projectNextInvoice } from '../src/services/faturaParser';
 
 const pdfPath = 'C:/Users/Usuario/Documents/Financas-APP-Google/fatura.pdf';
 const data = new Uint8Array(fs.readFileSync(pdfPath));

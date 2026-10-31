@@ -1,4 +1,4 @@
-import { hashGroupId, filterDuplicates, transactionKey, toDateKey } from './src/services/faturaDedup';
+import { hashGroupId, filterDuplicates, transactionKey, toDateKey } from '../src/services/faturaDedup';
 
 // Simula um Timestamp do Firestore
 const ts = (iso: string) => ({

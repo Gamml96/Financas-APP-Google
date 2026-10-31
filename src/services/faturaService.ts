@@ -30,6 +30,8 @@ export interface FaturaResult {
   totalInvoiceAmount?: number;
   transactions: FaturaTransaction[];
   warnings?: string[];
+  /** Texto bruto extraído do PDF (para diagnóstico/reportar fatura não reconhecida) */
+  rawText?: string;
 }
 
 /**
@@ -56,6 +58,7 @@ export async function extractFaturaFromPdf(
 ): Promise<FaturaResult> {
   const pages = await extractPdfPages(file, options.password);
   const parsed = parseFatura(pages);
+  const rawText = pages.map((p, i) => `===== PÁGINA ${i + 1} =====\n${p.join('\\n')}`).join('\\n\\n');
 
   // PDF gerado por impressão ("Microsoft Print to PDF", scanner, foto) vira
   // imagem: não existe texto para ler e nenhum parser consegue extrair valores.
@@ -108,5 +111,6 @@ export async function extractFaturaFromPdf(
     totalInvoiceAmount: parsed.totals.total,
     transactions,
     warnings: parsed.warnings,
+    rawText,
   };
 }

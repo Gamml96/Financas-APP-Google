@@ -27,7 +27,7 @@ const pdfBuffer = fs.readFileSync(pdfPath);
 const base64Data = pdfBuffer.toString('base64');
 
 // Importa as funções do serviço
-const { extractFaturaFromPdf, computeNetTotal } = await import('./src/services/faturaService.ts');
+const { extractFaturaFromPdf, computeNetTotal } = await import('../src/services/faturaService.ts');
 
 // Cria um objeto File-like compatível com o serviço (usando Buffer no Node)
 const file = new File([pdfBuffer], 'fatura.pdf', { type: 'application/pdf' });

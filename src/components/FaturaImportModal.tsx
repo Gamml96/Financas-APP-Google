@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { cn } from '../utils/cn';
 import { extractFaturaFromPdf, computeNetTotal, FaturaResult, FaturaTransaction } from '../services/faturaService';
+import { extractPdfPages } from '../services/pdfText';
 
 export interface ImportSummary {
   imported: number;
@@ -82,6 +83,8 @@ export default function FaturaImportModal({ onClose, onImport, accounts, categor
   const [passwordIncorrect, setPasswordIncorrect] = useState(false);
   const [showSkipped, setShowSkipped] = useState(false);
   const [showFuture, setShowFuture] = useState(false);
+  /** Texto bruto extraído do PDF (para reportar fatura não reconhecida) */
+  const [extractedRawText, setExtractedRawText] = useState<string>('');
 
   // Filtra apenas contas de crédito/híbridas
   const creditAccounts = accounts.filter(acc => acc.type === 'credit' || acc.type === 'hybrid');
@@ -114,7 +117,18 @@ export default function FaturaImportModal({ onClose, onImport, accounts, categor
   const runExtraction = async (selected: File, password?: string) => {
     setError(null);
     setResult(null);
+    setExtractedRawText('');
     setStep('processing');
+
+    // Extrai o texto bruto primeiro (útil para reportar fatura não reconhecida)
+    try {
+      const pages = await extractPdfPages(selected, password);
+      const txt = pages.map((p, i) => `===== PÁGINA ${i + 1} =====\\n${p.join('\\n')}`).join('\\n\\n');
+      setExtractedRawText(txt);
+      console.log('[rawText] set, length:', txt.length);
+    } catch (e) {
+      console.warn('[rawText] failed:', e);
+    }
 
     try {
       const extracted = await extractFaturaFromPdf(selected, {
@@ -573,14 +587,31 @@ export default function FaturaImportModal({ onClose, onImport, accounts, categor
 
           {/* Warnings */}
           {result.warnings && result.warnings.length > 0 && (
-            <div className="p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-800/50 text-amber-700 dark:text-amber-400 text-xs rounded-xl space-y-1">
-              <div className="flex items-center gap-1.5 font-semibold">
-                <AlertTriangle className="w-3.5 h-3.5" />
-                <span>Observações da leitura ({result.warnings.length}):</span>
+            <div className="space-y-1">
+              <div className="p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-800/50 text-amber-700 dark:text-amber-400 text-xs rounded-xl space-y-1">
+                <div className="flex items-center gap-1.5 font-semibold">
+                  <AlertTriangle className="w-3.5 h-3.5" />
+                  <span>Observações da leitura ({result.warnings.length}):</span>
+                </div>
+                {result.warnings.map((w, i) => (
+                  <p key={i} className="pl-5">• {w}</p>
+                ))}
               </div>
-              {result.warnings.map((w, i) => (
-                <p key={i} className="pl-5">• {w}</p>
-              ))}
+              {extractedRawText && (
+                <button
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(extractedRawText);
+                      alert('Texto da fatura copiado para a área de transferência. Cole em um e-mail/mensagem para reportar o problema.');
+                    } catch {
+                      alert('Não foi possível copiar automaticamente.');
+                    }
+                  }}
+                  className="text-[11px] text-indigo-600 dark:text-indigo-400 hover:underline px-1"
+                >
+                  Copiar texto da fatura (para reportar problema)
+                </button>
+              )}
             </div>
           )}
 
@@ -891,6 +922,21 @@ export default function FaturaImportModal({ onClose, onImport, accounts, categor
           >
             Tentar novamente
           </button>
+          {extractedRawText && (
+            <button
+              onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(extractedRawText);
+                  setError('Texto da fatura copiado para a área de transferência. Cole em um e-mail/mensagem para reportar o problema.');
+                } catch {
+                  setError('Não foi possível copiar automaticamente. Selecione o texto abaixo e copie manualmente:\\n\\n' + extractedRawText.slice(0, 500));
+                }
+              }}
+              className="w-full py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg text-xs font-semibold hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+            >
+              Copiar texto da fatura (para reportar)
+            </button>
+          )}
         </div>
       )}
 

@@ -1,5 +1,5 @@
-import { FaturaTransaction } from './src/services/faturaService';
-import { filterDuplicates, hashGroupId } from './src/services/faturaDedup';
+import { FaturaTransaction } from '../src/services/faturaService';
+import { filterDuplicates, hashGroupId } from '../src/services/faturaDedup';
 
 // Simula transações extraídas pela IA (como a fatura real do BTG)
 const extracted: FaturaTransaction[] = [
