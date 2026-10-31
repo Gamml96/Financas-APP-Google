@@ -73,12 +73,12 @@ const CATEGORY_RULES: Array<[string, string[]]> = [
   ]],
   ['Compras', [
     'amazon', 'mercado livre', 'mercadolivre', 'mercadol', 'shopee', 'magalu', 'americanas', 'shein',
-    'aliexpress', 'c&a', 'renner', 'riachuelo', 'zara', 'nike', 'adidas',
+    'aliexpress', 'c&a', 'renner', 'riachuelo', 'zara', 'nike', 'adidas', 'cea',
     'vinci shoes', 'tiktok', 'materiais para constru', 'leroy', 'madeira',
     'jim.com', 'apple', 'samsung', 'mercado*l', 'sangirardi', 'maesta',
   ]],
   ['Entretenimento', [
-    'netflix', 'spotify', 'cinema', 'show', 'ingresso', 'steam', 'playstation',
+    'netflix', 'spotify', 'cinema', 'show', 'ingresso', 'steam', 'playstation', 'ticketmaster',
     'xbox', 'wellhub', 'gympass', 'academia', 'parque', 'turismo', 'eda shows',
     'dragon pass', 'sala vip', 'disney', 'tennis', 'airbnb',
   ]],
@@ -160,8 +160,9 @@ export function monthLabel(referenceMonth?: string): string {
   return `${MONTH_NAMES[month - 1]}/${year}`;
 }
 
-function detectBank(text: string): 'btg' | 'c6' {
+function detectBank(text: string): 'btg' | 'c6' | 'nubank' {
   if (/BANCO C6/i.test(text) || /C6\s*(Bank|Carbon)/i.test(text)) return 'c6';
+  if (/Nubank/i.test(text)) return 'nubank';
   return 'btg';
 }
 
@@ -263,6 +264,214 @@ function parseHeaderC6(text: string): Omit<ParsedFatura, 'transactions' | 'warni
   if (fees.length) info.totals.fees = fees.reduce((a, b) => a + b, 0);
 
   return info;
+}
+
+export function parseHeaderNubank(text: string): Omit<ParsedFatura, 'transactions' | 'warnings' | 'bankName'> & { bankName: string } {
+  const info: any = { bankName: 'Nubank', totals: {} };
+
+  // "Data de vencimento: 03 NOV 2026"
+  const vencMatch = text.match(/Data de vencimento:\s*(\d{1,2})\s+([A-Za-z]{3})\s+(\d{4})/i);
+  if (vencMatch) {
+    const day = Number(vencMatch[1]);
+    const month = MONTHS[vencMatch[2].toLowerCase()];
+    const year = Number(vencMatch[3]);
+    if (month) {
+      info.invoiceDueDate = isoDate(day, month, year);
+      info.referenceMonth = `${year}-${String(month).padStart(2, '0')}`;
+    }
+  } else {
+    // "fatura de novembro" + ano
+    const mesMatch = text.match(/fatura de\s+([A-Za-zçÇãÃéÉêÊ]+),? no valor/i);
+    const anoMatch = text.match(/fatura de\s+[A-Za-zçÇãÃéÉêÊ]+.*?(\d{4})/i);
+    if (mesMatch) {
+      const month = MONTH_NAMES.findIndex((n) => normalize(n) === normalize(mesMatch[1])) + 1;
+      if (month > 0) {
+        const year = anoMatch ? Number(anoMatch[1]) : new Date().getFullYear();
+        info.referenceMonth = `${year}-${String(month).padStart(2, '0')}`;
+      }
+    }
+  }
+
+  // "Período vigente: 20 SET a 26 OUT"
+  const periodMatch = text.match(/Per[ií]odo vigente:\s*(\d{1,2})\s+([A-Za-z]{3})\s+a\s+(\d{1,2})\s+([A-Za-z]{3})/i);
+  if (periodMatch) {
+    const startDay = Number(periodMatch[1]);
+    const startMonth = MONTHS[periodMatch[2].toLowerCase()];
+    const endDay = Number(periodMatch[3]);
+    const endMonth = MONTHS[periodMatch[4].toLowerCase()];
+    if (startMonth && endMonth) {
+      const year = info.referenceMonth ? Number(info.referenceMonth.slice(0, 4)) : new Date().getFullYear();
+      // Se o mês final for maior que o de referência, é do ano anterior
+      const endYear = endMonth > (info.referenceMonth ? Number(info.referenceMonth.slice(5, 7)) : endMonth) ? year - 1 : year;
+      const startYear = startMonth > endMonth ? endYear - 1 : endYear;
+      info.statementPeriodStart = isoDate(startDay, startMonth, startYear);
+      info.statementPeriodEnd = isoDate(endDay, endMonth, endYear);
+    }
+  }
+
+  const totalMatch = text.match(/Total a pagar R\$\s*([\d.]+,\d{2})/);
+  if (totalMatch) info.totals.total = parseBrl(totalMatch[1]);
+
+  const purchasesMatch = text.match(/Total de compras de todos os cart[oõ]es[^R]*R\$\s*([\d.]+,\d{2})/i);
+  if (purchasesMatch) info.totals.purchases = parseBrl(purchasesMatch[1]);
+
+  const creditsMatch = text.match(/Outros lan[cç]amentos\s*R\$\s*([\d.]+,\d{2})/i);
+  // Não define credits: o "Outros lançamentos" do Nubank agrega coisas que não são
+  // estornos puros; definir causaria aviso falso.
+
+  const nextMatch = text.match(/Saldo em aberto da pr[oó]xima fatura R\$\s*([\d.]+,\d{2})/i);
+  if (nextMatch) info.totals.nextInvoice = parseBrl(nextMatch[1]);
+
+  return info;
+}
+
+function parseTransactionsNubank(pages: string[][], info: ParsedFatura): ParsedTransaction[] {
+  const refYear = info.referenceMonth ? Number(info.referenceMonth.slice(0, 4)) : new Date().getFullYear();
+  const refMonth = info.referenceMonth ? Number(info.referenceMonth.slice(5, 7)) : new Date().getMonth() + 1;
+
+  const transactions: ParsedTransaction[] = [];
+  let pendingDate: { day: number; month: number } | null = null;
+  let section = 'desconhecido';
+  let stopped = false;
+
+  const INSTALLMENT_RE_NU = /Parcela\s+(\d{1,2})\s*\/\s*(\d{1,2})/i;
+  const AMOUNT_RE = /R\$\s*([\d.]+,\d{2})\s*$/;
+
+  for (const page of pages) {
+    stopped = false;
+    for (const raw of page) {
+      const line = raw.trim();
+      if (!line) continue;
+
+      if (/TRANSA[CÇ][OÕ]ES/i.test(line) || /TRANSACTIONS/i.test(line)) {
+        section = 'compras';
+        stopped = false;
+        pendingDate = null;
+        continue;
+      }
+      if (
+        /RESUMO DA FATURA/i.test(line) ||
+        /PR[ÓO]XIMAS FATURAS/i.test(line) ||
+        /LIMITES DISPON/i.test(line) ||
+        /VALOR M[AÁ]XIMO/i.test(line) ||
+        /Como assegurado/i.test(line) ||
+        /Em cumprimento/i.test(line)
+      ) {
+        stopped = true;
+        pendingDate = null;
+        continue;
+      }
+      if (stopped || section !== 'compras') {
+        pendingDate = null;
+        continue;
+      }
+      if (/Pagamentos e Financiamentos/i.test(line)) continue;
+
+      // Linha que é só uma data: "08 OUT"
+      const dateOnly = line.match(/^(\d{1,2})\s+([A-Za-z]{3})$/);
+      if (dateOnly) {
+        const m = MONTHS[dateOnly[2].toLowerCase()];
+        if (m) pendingDate = { day: Number(dateOnly[1]), month: m };
+        continue;
+      }
+
+      let day: number | null = null;
+      let month: number | null = null;
+      let rest = line;
+
+      const dateMatch = line.match(/^(\d{1,2})\s+([A-Za-z]{3})\s+(.+)$/);
+      if (dateMatch && MONTHS[dateMatch[2].toLowerCase()]) {
+        day = Number(dateMatch[1]);
+        month = MONTHS[dateMatch[2].toLowerCase()];
+        rest = dateMatch[3].trim();
+      } else if (pendingDate) {
+        day = pendingDate.day;
+        month = pendingDate.month;
+        rest = line;
+        pendingDate = null;
+      }
+
+      if (day === null || month === null) {
+        pendingDate = null;
+        continue;
+      }
+
+      const amtMatch = AMOUNT_RE.exec(rest);
+      if (!amtMatch) {
+        pendingDate = null;
+        continue;
+      }
+      // Verifica se há sinal de menos antes do R$
+      const beforeAmount = rest.slice(0, amtMatch.index);
+      const trimmedBefore = beforeAmount.trim();
+      const lastChar = trimmedBefore.length > 0 ? trimmedBefore.charCodeAt(trimmedBefore.length - 1) : 0;
+      const isNegative = lastChar === 45 || lastChar === 8722; // '-' ou '−'
+      const amount = parseBrl(amtMatch[1]);
+      rest = rest.slice(0, amtMatch.index).trim();
+      // Remove o sinal de menos do final da descrição
+      if (rest.endsWith('-') || rest.endsWith('−')) rest = rest.slice(0, -1).trim();
+
+      let installmentNumber: number | undefined;
+      let installmentTotal: number | undefined;
+      const inst = INSTALLMENT_RE_NU.exec(rest);
+      if (inst) {
+        const cur = Number(inst[1]);
+        const tot = Number(inst[2]);
+        if (tot >= 2 && cur <= tot) {
+          installmentNumber = cur;
+          installmentTotal = tot;
+        }
+        rest = rest.replace(INSTALLMENT_RE_NU, '').trim();
+      }
+
+      const description = rest
+        .replace(/…/g, ' ')
+        .replace(/••••\s*\d+/g, '')
+        .replace(/\s{2,}/g, ' ')
+        .replace(/^[-\s]+|[-\s]+$/g, '')
+        .trim();
+      if (!description || /^total/i.test(description)) {
+        pendingDate = null;
+        continue;
+      }
+
+      // Pula linhas de saldo/ajuste interno que não são transações
+      if (/saldo em atraso/i.test(description) || /cr[eé]dito de atraso/i.test(description)) {
+        pendingDate = null;
+        continue;
+      }
+
+      const year = month > refMonth ? refYear - 1 : refYear;
+      const guess = guessCategory(description);
+
+      let type: FaturaTxType = 'purchase';
+      if (isNegative) {
+        if (/pagamento/i.test(description)) type = 'payment';
+        else if (/estorno|cr[eé]dito|encerramento/i.test(description)) type = 'refund';
+        else type = 'refund';
+      } else {
+        if (/multa|juros|iof/i.test(description)) type = 'fee';
+      }
+
+      transactions.push({
+        date: isoDate(day, month, year),
+        description,
+        amount: Math.round(amount * 100) / 100,
+        currency: 'BRL',
+        type,
+        section: 'compras',
+        category: guess.category,
+        categoryConfident: guess.confident,
+        installmentNumber,
+        installmentTotal,
+        compensated: false,
+      });
+
+      pendingDate = null;
+    }
+  }
+
+  return transactions;
 }
 
 interface SegmentContext {
@@ -575,7 +784,10 @@ const brl = (value: number): string =>
 export function parseFatura(pages: string[][]): ParsedFatura {
   const text = pages.map((page) => page.join('\n')).join('\n');
   const bank = detectBank(text);
-  const header = bank === 'c6' ? parseHeaderC6(text) : parseHeaderBTG(text);
+  const header =
+    bank === 'c6' ? parseHeaderC6(text) :
+    bank === 'nubank' ? parseHeaderNubank(text) :
+    parseHeaderBTG(text);
   const fatura: ParsedFatura = {
     ...header,
     transactions: [],
@@ -583,9 +795,9 @@ export function parseFatura(pages: string[][]): ParsedFatura {
   };
 
   fatura.transactions =
-    bank === 'c6'
-      ? parseTransactionsC6(pages, fatura)
-      : parseTransactionsBTG(pages, fatura);
+    bank === 'c6' ? parseTransactionsC6(pages, fatura) :
+    bank === 'nubank' ? parseTransactionsNubank(pages, fatura) :
+    parseTransactionsBTG(pages, fatura);
 
   const pairs = markCompensated(fatura.transactions);
 
