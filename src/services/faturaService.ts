@@ -57,9 +57,22 @@ export async function extractFaturaFromPdf(
   const pages = await extractPdfPages(file);
   const parsed = parseFatura(pages);
 
+  // PDF gerado por impressão ("Microsoft Print to PDF", scanner, foto) vira
+  // imagem: não existe texto para ler e nenhum parser consegue extrair valores.
+  const textChars = pages.reduce(
+    (sum, page) => sum + page.reduce((lineSum, line) => lineSum + line.length, 0),
+    0
+  );
+  if (textChars < 40) {
+    throw new Error(
+      'Este PDF é uma imagem (foi gerado por impressão ou digitalização), então não tem texto para ler. ' +
+        'Baixe o PDF original da fatura no app ou no site do banco — o arquivo que o banco envia por e-mail — e importe esse arquivo.'
+    );
+  }
+
   if (parsed.transactions.length === 0) {
     throw new Error(
-      'Não encontrei lançamentos neste PDF. Confira se é a fatura completa (não apenas o resumo) ou se o arquivo tem texto selecionável.'
+      'Não encontrei lançamentos neste PDF. Confira se é a fatura completa (não apenas o resumo).'
     );
   }
 
