@@ -1598,7 +1598,9 @@ function AppContent() {
     });
 
     const { newTransactions, skipped } = filterDuplicates(extractedTransactions, existingGroups, existingByDate);
-
+    console.log('[dedup] existingGroups:', [...existingGroups.entries()]);
+    console.log('[dedup] extracted:', extractedTransactions.length, 'new:', newTransactions.length, 'skipped:', skipped.length);
+    console.log('[dedup] skipped:', skipped.map((t: any) => `${t.description} ${t.installmentNumber}/${t.installmentTotal} (${t.amount})`));
     if (newTransactions.length === 0) {
       return { imported: 0, skipped: skipped.length, futureInstallments: 0 };
     }
