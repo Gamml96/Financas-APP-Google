@@ -1,12 +1,8 @@
 /**
  * Parser local de faturas de cartão (sem IA).
  *
- * Recebe o texto do PDF já reconstruído em linhas (ver `pdfText.ts`) e devolve
- * os lançamentos estruturados, com conferência dos totais do próprio PDF.
- *
- * O layout de referência é o do BTG Pactual: duas colunas, seções por cartão
- * (físico/virtual), créditos separados e compras internacionais com linha de
- * "Conversão para Real".
+ * Suporta os layouts do BTG Pactual e do C6 Bank. A detecção do banco é feita
+ * pelo próprio texto da fatura.
  */
 
 export type FaturaTxType = 'purchase' | 'fee' | 'refund' | 'payment';
@@ -31,7 +27,6 @@ export interface ParsedFatura {
   invoiceDueDate?: string;
   statementPeriodStart?: string;
   statementPeriodEnd?: string;
-  /** Totais lidos do resumo do PDF (para conferência) */
   totals: {
     purchases?: number;
     credits?: number;
@@ -53,19 +48,15 @@ const MONTH_NAMES = [
   'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro',
 ];
 
-// Início de um lançamento: "21 Mai ..."
 const DATE_RE = /(?<![\d/])(0?[1-9]|[12]\d|3[01])\s+(jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)\s+/gi;
 const BRL_END_RE = /^(?<desc>.*?)\s+(?:-\s*)?R\$\s*(?<amount>[\d.]+,\d{2})\s*$/;
 const FOREIGN_END_RE = /^(?<desc>.*?)\s+(?<cur>USD|EUR|COP|ARS|GBP)\s*(?<amount>[\d.,]+)\s*$/i;
 const COTACAO_RE = /^cota[cç][aã]o da moeda\s*-?\s*R\$\s*([\d.]+,\d{2})\s*$/i;
 const CONVERSAO_RE = /^convers[aã]o para real\s*-?\s*R\$\s*([\d.]+,\d{2})\s*$/i;
-// As duas colunas podem dividir a mesma linha:
-// "08 Set Ifood R$ 7,95 Conversão para Real - R$ 68,34"
 const CONTINUATION_SPLIT_RE =
   /(?:cota[cç][aã]o da moeda|convers[aã]o para real)\s*-?\s*R\$\s*[\d.]+,\d{2}/gi;
 const INSTALLMENT_RE = /\(?\s*(\d{1,2})\s*\/\s*(\d{1,2})\s*\)?\s*$/;
 
-/** Categorias por palavra-chave (chute local, custo zero). */
 const CATEGORY_RULES: Array<[string, string[]]> = [
   ['Alimentação', [
     'ifood', 'restaurante', 'padaria', 'supermercado', 'mercado', 'mcdonald',
@@ -77,18 +68,19 @@ const CATEGORY_RULES: Array<[string, string[]]> = [
   ['Transporte', [
     'uber', '99', 'posto', 'combustivel', 'gasolina', 'estacionamento',
     'pedagio', 'passagem', 'avianca', 'latam', 'gol', 'azul', 'shell',
-    'ipiranga', 'sem parar', 'veloe', 'estapar',
+    'ipiranga', 'sem parar', 'veloe', 'estapar', 'decolar', 'airbnb',
+    'avis', 'transport',
   ]],
   ['Compras', [
-    'amazon', 'mercado livre', 'shopee', 'magalu', 'americanas', 'shein',
+    'amazon', 'mercado livre', 'mercadolivre', 'mercadol', 'shopee', 'magalu', 'americanas', 'shein',
     'aliexpress', 'c&a', 'renner', 'riachuelo', 'zara', 'nike', 'adidas',
     'vinci shoes', 'tiktok', 'materiais para constru', 'leroy', 'madeira',
-    'jim.com', 'apple', 'samsung',
+    'jim.com', 'apple', 'samsung', 'mercado*l', 'sangirardi', 'maesta',
   ]],
   ['Entretenimento', [
     'netflix', 'spotify', 'cinema', 'show', 'ingresso', 'steam', 'playstation',
     'xbox', 'wellhub', 'gympass', 'academia', 'parque', 'turismo', 'eda shows',
-    'dragon pass', 'sala vip', 'disney', 'tennis',
+    'dragon pass', 'sala vip', 'disney', 'tennis', 'airbnb',
   ]],
   ['Saúde', [
     'farmacia', 'drogaria', 'drogasil', 'raia', 'pacheco', 'consulta', 'exame',
@@ -97,11 +89,11 @@ const CATEGORY_RULES: Array<[string, string[]]> = [
   ['Aluguel', ['aluguel', 'condominio', 'moradia', 'iptu']],
   ['Encargos', [
     'juros', 'multa', 'mora', 'iof', 'anuidade', 'tarifa', 'encargo',
-    'rotativo', 'cobranca', 'cotacao da moeda', 'atraso',
+    'rotativo', 'cobranca', 'cotacao da moeda', 'atraso', 'estorno tarifa',
   ]],
   ['Outros', [
     'vivo', 'claro', 'tim', 'oi', 'internet', 'energia', 'enel', 'sabesp',
-    'agua', 'gas', 'seguro', 'assinatura',
+    'agua', 'gas', 'seguro', 'assinatura', 'fundacao de apoio', 'feher',
   ]],
 ];
 
@@ -120,7 +112,6 @@ const END_MARKERS = [
 ];
 const TX_SECTIONS = new Set(['compras', 'encargos', 'outros', 'pagamentos']);
 
-/** Minúsculo e sem acento, para comparar palavras-chave. */
 export function normalize(text: string): string {
   return text
     .normalize('NFD')
@@ -128,15 +119,10 @@ export function normalize(text: string): string {
     .toLowerCase();
 }
 
-/** "1.234,56" -> 1234.56 */
 function parseBrl(value: string): number {
   return Number(value.replace(/\./g, '').replace(',', '.'));
 }
 
-/**
- * Sugere categoria por palavra-chave. Ganha a palavra mais específica
- * ("mercado livre" vence "mercado"). Sem palavra conhecida -> '?'.
- */
 export function guessCategory(description: string): { category: string; confident: boolean } {
   const d = normalize(description);
   let best: { length: number; category: string } | null = null;
@@ -145,8 +131,6 @@ export function guessCategory(description: string): { category: string; confiden
     for (const keyword of keywords) {
       const k = normalize(keyword).trim();
       if (!k) continue;
-      // Palavras curtas exigem limite nas duas pontas ("99" não casa com "199").
-      // Palavras longas podem aparecer coladas ("laser" em "P14espacolaser").
       const left = k.length <= 4 ? '(?<![a-z0-9])' : '';
       const pattern = new RegExp(left + k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?![a-z0-9])');
       if (pattern.test(d) && (!best || k.length > best.length)) {
@@ -176,8 +160,12 @@ export function monthLabel(referenceMonth?: string): string {
   return `${MONTH_NAMES[month - 1]}/${year}`;
 }
 
-/** Cabeçalho: banco, mês de referência, vencimento, período e totais do resumo. */
-export function parseHeader(text: string): Omit<ParsedFatura, 'transactions' | 'warnings' | 'bankName'> & { bankName: string } {
+function detectBank(text: string): 'btg' | 'c6' {
+  if (/BANCO C6/i.test(text) || /C6\s*(Bank|Carbon)/i.test(text)) return 'c6';
+  return 'btg';
+}
+
+function parseHeaderBTG(text: string): Omit<ParsedFatura, 'transactions' | 'warnings' | 'bankName'> & { bankName: string } {
   const info: any = { bankName: 'BTG Pactual', totals: {} };
 
   const faturaMatch = text.match(/fatura de\s+([A-Za-zçÇãÃéÉêÊ]+)\s+de\s+(\d{4})/i);
@@ -218,6 +206,65 @@ export function parseHeader(text: string): Omit<ParsedFatura, 'transactions' | '
   return info;
 }
 
+function parseHeaderC6(text: string): Omit<ParsedFatura, 'transactions' | 'warnings' | 'bankName'> & { bankName: string } {
+  const info: any = { bankName: 'C6 Bank', totals: {} };
+
+  const vencIso = text.match(/Vencimento:\s*(\d{2})\/(\d{2})\/(\d{4})/);
+  if (vencIso) {
+    const d = Number(vencIso[1]); const m = Number(vencIso[2]); const y = Number(vencIso[3]);
+    info.invoiceDueDate = isoDate(d, m, y);
+    info.referenceMonth = `${y}-${String(m).padStart(2, '0')}`;
+  } else {
+    const vencLong = text.match(/(?:Data do vencimento|Vencimento):\s*(\d{1,2})\s+de\s+([A-Za-zçÇãÃéÉêÊ]+)/i);
+    const vencMonth = text.match(/fatura com vencimento em ([A-Za-zçÇãÃéÉêÊ]+)/i);
+    const monthStr = vencLong ? vencLong[2] : (vencMonth ? vencMonth[1] : null);
+    const month = monthStr ? (MONTH_NAMES.findIndex((n) => normalize(n) === normalize(monthStr)) + 1) : 0;
+    if (month > 0) {
+      const day = vencLong ? Number(vencLong[1]) : 5;
+      const yMatch =
+        text.match(/Vencimento:\s*\d{2}\/\d{2}\/(\d{4})/) ||
+        text.match(/fechamento desta fatura em \d{2}\/\d{2}\/(\d{2})/);
+      const year = yMatch
+        ? yMatch[1].length === 2
+          ? 2000 + Number(yMatch[1])
+          : Number(yMatch[1])
+        : new Date().getFullYear();
+      info.referenceMonth = `${year}-${String(month).padStart(2, '0')}`;
+      if (vencLong) info.invoiceDueDate = isoDate(day, month, year);
+    }
+  }
+
+  const periodEndMatch = text.match(/fechamento desta fatura em (\d{2})\/(\d{2})\/(\d{2})/);
+  if (periodEndMatch) {
+    info.statementPeriodEnd = isoDate(
+      Number(periodEndMatch[1]),
+      Number(periodEndMatch[2]),
+      2000 + Number(periodEndMatch[3])
+    );
+  }
+
+  const totalMatch = text.match(/Total a pagar R\$\s*([\d.]+,\d{2})/);
+  if (totalMatch) info.totals.total = parseBrl(totalMatch[1]);
+
+  const nac = text.match(/Compras nacionais\s*([\d.]+,\d{2})/);
+  const intl = text.match(/Compras internacionais\s*([\d.]+,\d{2})/);
+  if (nac || intl) {
+    info.totals.purchases = parseBrl(nac?.[1] || '0') + parseBrl(intl?.[1] || '0');
+  }
+
+  const credits = text.match(/Estornos\s*\/\s*Crédito na Fatura \(-\)\s*([\d.]+,\d{2})/);
+  if (credits) info.totals.credits = parseBrl(credits[1]);
+
+  const anuidade = text.match(/Anuidade diferenciada - Parcela \d+\/\d+\s*([\d.]+,\d{2})/);
+  const iof = text.match(/IOF de financiamento e compras internacionais\s*([\d.]+,\d{2})/);
+  const fees: number[] = [];
+  if (anuidade) fees.push(parseBrl(anuidade[1]));
+  if (iof) fees.push(parseBrl(iof[1]));
+  if (fees.length) info.totals.fees = fees.reduce((a, b) => a + b, 0);
+
+  return info;
+}
+
 interface SegmentContext {
   section: string;
   isCredit: boolean;
@@ -254,7 +301,6 @@ function parseSegment(segment: string, ctx: SegmentContext): ParsedTransaction |
 
   if (amount === null || Number.isNaN(amount)) return null;
 
-  // Parcelas "(5/6)"
   let installmentNumber: number | undefined;
   let installmentTotal: number | undefined;
   const inst = INSTALLMENT_RE.exec(description);
@@ -294,7 +340,6 @@ function parseSegment(segment: string, ctx: SegmentContext): ParsedTransaction |
   };
 }
 
-/** Separa a linha em pedaços de texto e continuações ("Cotação"/"Conversão"). */
 function splitContinuations(line: string): Array<{ kind: 'text' | 'cont'; value: string }> {
   const parts: Array<{ kind: 'text' | 'cont'; value: string }> = [];
   let pos = 0;
@@ -309,11 +354,7 @@ function splitContinuations(line: string): Array<{ kind: 'text' | 'cont'; value:
   return parts;
 }
 
-/**
- * Percorre as páginas linha a linha e devolve os lançamentos.
- * `pages` já vem com as colunas na ordem de leitura (esquerda, depois direita).
- */
-export function parseTransactions(pages: string[][], info: ParsedFatura): ParsedTransaction[] {
+function parseTransactionsBTG(pages: string[][], info: ParsedFatura): ParsedTransaction[] {
   const refYear = info.referenceMonth ? Number(info.referenceMonth.slice(0, 4)) : new Date().getFullYear();
   const refMonth = info.referenceMonth ? Number(info.referenceMonth.slice(5, 7)) : new Date().getMonth() + 1;
 
@@ -332,15 +373,10 @@ export function parseTransactions(pages: string[][], info: ParsedFatura): Parsed
       return;
     }
     const cotacao = COTACAO_RE.exec(text);
-    if (cotacao) {
-      // A cotação já está embutida no valor da conversão; serve só de referência.
-      return;
-    }
+    if (cotacao) return;
   };
 
   for (const page of pages) {
-    // A lista de lançamentos continua na página seguinte, mesmo depois do
-    // bloco de "Taxas e encargos" que encerra a página anterior.
     stopped = false;
 
     for (const raw of page) {
@@ -408,18 +444,110 @@ export function parseTransactions(pages: string[][], info: ParsedFatura): Parsed
   return transactions;
 }
 
-/**
- * Cobrança + estorno de mesmo valor na mesma fatura se anulam.
- * Marca os dois como compensados para não criar lançamento fantasma.
- */
+function parseTransactionsC6(pages: string[][], info: ParsedFatura): ParsedTransaction[] {
+  const refYear = info.referenceMonth ? Number(info.referenceMonth.slice(0, 4)) : new Date().getFullYear();
+  const refMonth = info.referenceMonth ? Number(info.referenceMonth.slice(5, 7)) : new Date().getMonth() + 1;
+
+  const transactions: ParsedTransaction[] = [];
+  let section = 'desconhecido';
+  let stopped = false;
+
+  const C6_LINE_RE = /^(?<day>\d{1,2})\s+(?<mon>jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)\s+(?<rest>.+?)\s+(?<amount>\d{1,3}(?:\.\d{3})*,\d{2})\s*$/i;
+  const INSTALLMENT_RE_C6 = /Parcela\s+(\d{1,2})\s*\/\s*(\d{1,2})/i;
+
+  for (const page of pages) {
+    stopped = false;
+    for (const raw of page) {
+      const line = raw.trim();
+      if (!line) continue;
+
+      if (/Transações do cartão/i.test(line)) {
+        section = 'compras';
+        stopped = false;
+        continue;
+      }
+      if (
+        /Resumo da fatura/i.test(line) ||
+        /Formas de pagamento/i.test(line) ||
+        /Central de relacionamento/i.test(line) ||
+        /©\s*2022/i.test(line) ||
+        /BANCO C6/i.test(line) ||
+        /Limite de cartão/i.test(line)
+      ) {
+        stopped = true;
+        continue;
+      }
+      if (stopped || section !== 'compras') continue;
+      if (/^Subtotal/i.test(line) || /Lembrando:/i.test(line) || /Valores em reais/i.test(line)) continue;
+
+      const m = C6_LINE_RE.exec(line);
+      if (!m?.groups) continue;
+
+      const day = Number(m.groups.day);
+      const month = MONTHS[m.groups.mon.toLowerCase()];
+      if (!month) continue;
+      let rest = m.groups.rest.trim();
+      const amount = parseBrl(m.groups.amount);
+
+      let installmentNumber: number | undefined;
+      let installmentTotal: number | undefined;
+      const inst = INSTALLMENT_RE_C6.exec(rest);
+      if (inst) {
+        const current = Number(inst[1]);
+        const total = Number(inst[2]);
+        if (total >= 2 && current <= total) {
+          installmentNumber = current;
+          installmentTotal = total;
+        }
+        rest = rest.replace(INSTALLMENT_RE_C6, '').replace(/-\s*$/, '').trim();
+      }
+
+      let currency = 'BRL';
+      const usdMatch = rest.match(/USD\s*([\d.,]+)/i);
+      if (usdMatch) {
+        currency = 'USD';
+        rest = rest.replace(/\s*USD\s*[\d.,]+\s*\|?\s*Cotação\s+\w+:\s*R\$[\d.,]+/i, '').trim();
+      }
+      rest = rest.replace(/\s*\|\s*Cotação.*$/i, '').trim();
+
+      const description = rest.replace(/\s{2,}/g, ' ').replace(/^[-\s]+|[-\s]+$/g, '').trim();
+      if (!description || /^total/i.test(description)) continue;
+
+      const year = month > refMonth ? refYear - 1 : refYear;
+      const guess = guessCategory(description);
+
+      let type: FaturaTxType = 'purchase';
+      if (/estorno/i.test(description)) type = 'refund';
+      else if (/^pag\b/i.test(description) || /pagamento/i.test(description) || /pag fatura/i.test(description)) type = 'payment';
+      else if (guess.category === 'Encargos' || /anuidade|iof|tarifa/i.test(description)) type = 'fee';
+
+      transactions.push({
+        date: isoDate(day, month, year),
+        description,
+        amount: Math.round(amount * 100) / 100,
+        currency,
+        type,
+        section: 'compras',
+        category: guess.category,
+        categoryConfident: guess.confident,
+        installmentNumber,
+        installmentTotal,
+        compensated: false,
+      });
+    }
+  }
+
+  return transactions;
+}
+
 export function markCompensated(transactions: ParsedTransaction[]): Array<[ParsedTransaction, ParsedTransaction]> {
   const pairs: Array<[ParsedTransaction, ParsedTransaction]> = [];
   const refunds = transactions.filter((t) => t.type === 'refund');
-  const purchases = transactions.filter((t) => t.type === 'purchase');
+  const candidates = transactions.filter((t) => t.type === 'purchase' || t.type === 'fee');
 
   for (const refund of refunds) {
-    const match = purchases.find(
-      (purchase) => !purchase.compensated && Math.abs(purchase.amount - refund.amount) < 0.005
+    const match = candidates.find(
+      (c) => !c.compensated && Math.abs(c.amount - refund.amount) < 0.005
     );
     if (match) {
       match.compensated = true;
@@ -430,7 +558,6 @@ export function markCompensated(transactions: ParsedTransaction[]): Array<[Parse
   return pairs;
 }
 
-/** Soma das parcelas que caem na próxima fatura. */
 export function projectNextInvoice(transactions: ParsedTransaction[]): number {
   const total = transactions.reduce((sum, t) => {
     if (t.type !== 'purchase' || t.compensated) return sum;
@@ -445,20 +572,21 @@ export function projectNextInvoice(transactions: ParsedTransaction[]): number {
 const brl = (value: number): string =>
   value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
-/**
- * Entrada principal: páginas de texto do PDF -> fatura estruturada + avisos.
- * Nada sai do dispositivo e nenhum token é gasto.
- */
 export function parseFatura(pages: string[][]): ParsedFatura {
   const text = pages.map((page) => page.join('\n')).join('\n');
-  const header = parseHeader(text);
+  const bank = detectBank(text);
+  const header = bank === 'c6' ? parseHeaderC6(text) : parseHeaderBTG(text);
   const fatura: ParsedFatura = {
     ...header,
     transactions: [],
     warnings: [],
   };
 
-  fatura.transactions = parseTransactions(pages, fatura);
+  fatura.transactions =
+    bank === 'c6'
+      ? parseTransactionsC6(pages, fatura)
+      : parseTransactionsBTG(pages, fatura);
+
   const pairs = markCompensated(fatura.transactions);
 
   for (const [purchase, refund] of pairs) {
@@ -514,7 +642,6 @@ export function parseFatura(pages: string[][]): ParsedFatura {
   return fatura;
 }
 
-/** Vencimento da parcela N, para exibir no preview. */
 export function installmentDueLabel(
   invoiceDueDate: string | undefined,
   remaining: number
