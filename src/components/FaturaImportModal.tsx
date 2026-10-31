@@ -42,6 +42,10 @@ interface FaturaImportModalProps {
   accounts: Array<{ id: string; name: string; type: string; isFavorite?: boolean }>;
   /** Categorias cadastradas pelo usuário (usadas pela IA e nos selects de edição) */
   categories?: string[];
+  /** Mapeamento aprendido: descrição normalizada -> categoria (do Firestore) */
+  learnedCategories?: Record<string, string>;
+  /** Callback para salvar novos mapeamentos aprendidos */
+  onLearnCategory?: (description: string, category: string) => void;
   /** Callback ao confirmar a importação */
   onImport: (
     transactions: FaturaTransaction[],
@@ -67,7 +71,7 @@ const PROCESSING_STEPS = [
   'Conferindo os totais da fatura...',
 ];
 
-export default function FaturaImportModal({ onClose, onImport, accounts, categories = [], isTestMode = false }: FaturaImportModalProps) {
+export default function FaturaImportModal({ onClose, onImport, accounts, categories = [], learnedCategories = {}, onLearnCategory, isTestMode = false }: FaturaImportModalProps) {
   const [step, setStep] = useState<Step>('select');
   const [file, setFile] = useState<File | null>(null);
   const [result, setResult] = useState<FaturaResult | null>(null);
@@ -133,6 +137,7 @@ export default function FaturaImportModal({ onClose, onImport, accounts, categor
       const extracted = await extractFaturaFromPdf(selected, {
         categories: categoryOptions,
         password,
+        learnedCategories,
       });
       setResult(extracted);
       setInvoiceDueDate(extracted.invoiceDueDate || '');
@@ -244,6 +249,10 @@ export default function FaturaImportModal({ onClose, onImport, accounts, categor
       installmentTotal: editForm.installmentTotal,
     };
     setResult({ ...result, transactions: updated });
+    // Aprende a correção de categoria para futuras importações
+    if (onLearnCategory && editForm.category !== result.transactions[editingIndex]?.category) {
+      onLearnCategory(updated[editingIndex].description, editForm.category);
+    }
     setEditingIndex(null);
     setEditForm(null);
   };

@@ -7,7 +7,7 @@
  */
 
 import { extractPdfPages } from './pdfText';
-import { parseFatura } from './faturaParser';
+import { parseFatura, normalize } from './faturaParser';
 
 export interface FaturaTransaction {
   date: string;
@@ -54,7 +54,7 @@ export function computeNetTotal(transactions: FaturaTransaction[]): number {
  */
 export async function extractFaturaFromPdf(
   file: File,
-  options: { categories?: string[]; password?: string } = {}
+  options: { categories?: string[]; password?: string; learnedCategories?: Record<string, string> } = {}
 ): Promise<FaturaResult> {
   const pages = await extractPdfPages(file, options.password);
   const parsed = parseFatura(pages);
@@ -83,7 +83,9 @@ export async function extractFaturaFromPdf(
   const fallbackCategory = available.includes('Outros') ? 'Outros' : available[0] || 'Outros';
 
   /** Encaixa a categoria sugerida na lista real do usuário. */
-  const resolveCategory = (suggested: string): string => {
+  const resolveCategory = (suggested: string, description: string): string => {
+    const learned = options.learnedCategories?.[normalize(description)];
+    if (learned && available.includes(learned)) return learned;
     if (available.length === 0) return suggested === '?' ? 'Outros' : suggested;
     if (suggested !== '?' && available.includes(suggested)) return suggested;
     return fallbackCategory;
@@ -95,11 +97,12 @@ export async function extractFaturaFromPdf(
       date: tx.date,
       description: tx.description,
       amount: tx.amount,
-      category: resolveCategory(tx.category),
+      category: resolveCategory(tx.category, tx.description),
       type: tx.type as FaturaTransaction['type'],
       installmentNumber: tx.installmentNumber,
       installmentTotal: tx.installmentTotal,
-      categoryConfident: tx.categoryConfident,
+      // Se a categoria veio do aprendizado, considera confiante
+      categoryConfident: tx.categoryConfident || Boolean(options.learnedCategories?.[normalize(tx.description)]),
     }))
     .filter((tx) => tx.description && tx.amount > 0);
 

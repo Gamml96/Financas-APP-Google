@@ -498,6 +498,22 @@ function AppContent() {
   const [userProfile, setUserProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [learnedCategories, setLearnedCategories] = useState<Record<string, string>>({});
+
+  // Salva um mapeamento aprendido (descrição normalizada -> categoria) no Firestore
+  const handleLearnCategory = async (description: string, category: string) => {
+    if (!user) return;
+    const { normalize } = await import('./services/faturaParser');
+    const key = normalize(description);
+    if (!key) return;
+    try {
+      const ref = doc(db, 'userSettings', user.uid);
+      await setDoc(ref, { categoryMappings: { [key]: category } }, { merge: true });
+      setLearnedCategories((prev) => ({ ...prev, [key]: category }));
+    } catch (e) {
+      console.warn('Falha ao salvar categoria aprendida:', e);
+    }
+  };
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [customCategories, setCustomCategories] = useState<Category[]>([]);
   const [budgets, setBudgets] = useState<Budget[]>([]);
@@ -871,6 +887,21 @@ function AppContent() {
       }
     });
 
+    return () => unsubscribe();
+  }, [user, isAuthReady]);
+
+  // Aprendizado de categorização: carrega o mapa salvo do usuário
+  useEffect(() => {
+    if (!user || !isAuthReady) return;
+    const ref = doc(db, 'userSettings', user.uid);
+    const unsubscribe = onSnapshot(ref, (snap) => {
+      if (snap.exists()) {
+        const data = snap.data() as any;
+        setLearnedCategories(data?.categoryMappings || {});
+      } else {
+        setLearnedCategories({});
+      }
+    }, () => setLearnedCategories({}));
     return () => unsubscribe();
   }, [user, isAuthReady]);
 
@@ -1763,6 +1794,10 @@ function AppContent() {
         const changes: any = {};
         if (Number(data.amount) !== Number(editingTransaction.amount)) changes.amount = Number(data.amount);
         if (data.category !== editingTransaction.category) changes.category = data.category;
+      // Aprende a correção de categoria para futuras importações
+      if (data.category && data.category !== editingTransaction.category && editingTransaction.description) {
+        handleLearnCategory(editingTransaction.description, data.category).catch(() => {});
+      }
         if (data.description !== editingTransaction.description) changes.description = data.description;
         if (data.accountId !== editingTransaction.accountId) changes.accountId = data.accountId;
         if (data.paymentType !== editingTransaction.paymentType) changes.paymentType = data.paymentType;
@@ -3118,6 +3153,8 @@ function AppContent() {
                 <FaturaImportModal
                   accounts={accounts}
                   categories={faturaCategories}
+                  learnedCategories={learnedCategories}
+                  onLearnCategory={handleLearnCategory}
                   onClose={() => setShowFaturaModal(false)}
                   onImport={handleImportFatura}
                 />
