@@ -596,7 +596,7 @@ export default function FaturaImportModal({ onClose, onImport, accounts, categor
                   <p key={i} className="pl-5">• {w}</p>
                 ))}
               </div>
-              {extractedRawText && (
+              {extractedRawText && extractedRawText.replace(/===== PÁGINA \\d+ =====/g, '').trim().length > 50 && (
                 <button
                   onClick={async () => {
                     try {
@@ -921,7 +921,7 @@ export default function FaturaImportModal({ onClose, onImport, accounts, categor
           >
             Tentar novamente
           </button>
-          {extractedRawText && (
+          {extractedRawText && extractedRawText.replace(/===== PÁGINA \\d+ =====/g, '').trim().length > 50 && (
             <button
               onClick={async () => {
                 try {
