@@ -46,14 +46,11 @@ interface FaturaImportModalProps {
 
 type Step = 'select' | 'processing' | 'account' | 'preview' | 'done' | 'error';
 
-/** Etapas mostradas enquanto a IA processa a fatura (dá noção de progresso). */
+/** Etapas mostradas durante a leitura local (é rápido, mas o PDF pode ter várias páginas). */
 const PROCESSING_STEPS = [
-  'Lendo o PDF da fatura...',
-  'Identificando os lançamentos...',
-  'Separando compras, encargos e estornos...',
-  'Conferindo as parcelas de cada compra...',
-  'Categorizando os estabelecimentos...',
-  'Quase lá: organizando o resultado...',
+  'Abrindo o PDF...',
+  'Lendo os lançamentos...',
+  'Conferindo os totais da fatura...',
 ];
 
 export default function FaturaImportModal({ onClose, onImport, accounts, categories = [], isTestMode = false }: FaturaImportModalProps) {
@@ -83,7 +80,7 @@ export default function FaturaImportModal({ onClose, onImport, accounts, categor
     }
   }, [defaultAccount, selectedAccountId]);
 
-  // Avança as etapas do processamento enquanto a IA trabalha
+  // Avança as etapas da leitura local (rápida, mas o PDF pode ter várias páginas)
   useEffect(() => {
     if (step !== 'processing') {
       setProcessingStep(0);
@@ -91,7 +88,7 @@ export default function FaturaImportModal({ onClose, onImport, accounts, categor
     }
     const interval = setInterval(() => {
       setProcessingStep((current) => Math.min(current + 1, PROCESSING_STEPS.length - 1));
-    }, 7000);
+    }, 700);
     return () => clearInterval(interval);
   }, [step]);
 
@@ -129,12 +126,7 @@ export default function FaturaImportModal({ onClose, onImport, accounts, categor
 
       setStep('account');
     } catch (err: any) {
-      const msg = err?.message || String(err);
-      // Mensagem amigável para erros temporários do Gemini (503, 429, etc.)
-      const friendly = msg.includes('Todos os modelos de fallback falharam')
-        ? 'O Gemini está temporariamente com alta demanda. O app tentou 4 modelos diferentes com retries. Tente novamente em alguns minutos.'
-        : msg;
-      setError(friendly);
+      setError(err?.message || String(err));
       setStep('error');
     }
   };
@@ -246,7 +238,7 @@ export default function FaturaImportModal({ onClose, onImport, accounts, categor
         <div className="flex-1">
           <h3 className="font-bold text-slate-900 dark:text-slate-100">Importar Fatura (PDF)</h3>
           <p className="text-xs text-slate-500 dark:text-slate-400">
-            Envie o PDF da fatura e uma IA vai extrair os lançamentos automaticamente.
+            Envie o PDF da fatura: a leitura é feita no seu dispositivo, sem enviar nada para fora.
           </p>
         </div>
       </div>
@@ -276,7 +268,7 @@ export default function FaturaImportModal({ onClose, onImport, accounts, categor
           <div className="flex items-start gap-2 text-xs text-slate-500 dark:text-slate-400 bg-indigo-50/50 dark:bg-indigo-900/10 p-3 rounded-xl border border-indigo-100 dark:border-indigo-800/50">
             <Info className="w-4 h-4 mt-0.5 text-indigo-500 flex-shrink-0" />
             <span>
-              Seu PDF é enviado diretamente ao Google Gemini para extração. O banco de dados fica no seu Firestore — nenhum terceiro tem acesso aos seus dados financeiros além disso.
+              Seu PDF é lido aqui mesmo, no navegador: nada é enviado para servidores de terceiros. Os lançamentos vão direto para o seu Firestore.
             </span>
           </div>
         </div>
@@ -300,10 +292,10 @@ export default function FaturaImportModal({ onClose, onImport, accounts, categor
                 {PROCESSING_STEPS[processingStep]}
               </p>
               <p className="text-sm text-slate-500 dark:text-slate-400">
-                Isso pode levar <strong className="text-slate-700 dark:text-slate-300">até 1 minuto</strong> — faturas com muitos lançamentos demoram mais.
+                Leitura local, direto do PDF — leva só alguns segundos.
               </p>
               <p className="text-xs text-slate-400 dark:text-slate-500">
-                Não feche esta janela: o resultado aparece aqui automaticamente assim que terminar.
+                A conferência dos totais é feita com os números impressos na própria fatura.
               </p>
             </div>
             <div className="flex items-center gap-1.5">
@@ -463,7 +455,7 @@ export default function FaturaImportModal({ onClose, onImport, accounts, categor
             <div className="p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-800/50 text-amber-700 dark:text-amber-400 text-xs rounded-xl space-y-1">
               <div className="flex items-center gap-1.5 font-semibold">
                 <AlertTriangle className="w-3.5 h-3.5" />
-                <span>Observações da IA ({result.warnings.length}):</span>
+                <span>Observações da leitura ({result.warnings.length}):</span>
               </div>
               {result.warnings.map((w, i) => (
                 <p key={i} className="pl-5">• {w}</p>
@@ -527,6 +519,11 @@ export default function FaturaImportModal({ onClose, onImport, accounts, categor
                                 : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400"
                             )}>
                               {isRefund ? '↩️ ' : isFee ? '🏦 ' : ''}{tx.category}
+                            </span>
+                          )}
+                          {tx.categoryConfident === false && (
+                            <span className="inline-block mt-1 ml-1 px-1.5 py-0.5 text-[10px] rounded-md font-medium bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400">
+                              revisar
                             </span>
                           )}
                         </div>
