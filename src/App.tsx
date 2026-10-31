@@ -958,7 +958,11 @@ function AppContent() {
 
   // Categorias usadas na importação de fatura (a IA só escolhe entre as do usuário)
   const faturaCategories = useMemo(
-    () => Array.from(new Set(allCategories.filter(c => c.type !== 'income').map(c => c.name))),
+    () => Array.from(new Set(
+      allCategories
+        .filter(c => c.type !== 'income' && c.name !== 'Transferência')
+        .map(c => c.name)
+    )),
     [allCategories]
   );
 
