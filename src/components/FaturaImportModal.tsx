@@ -125,9 +125,8 @@ export default function FaturaImportModal({ onClose, onImport, accounts, categor
       const pages = await extractPdfPages(selected, password);
       const txt = pages.map((p, i) => `===== PÁGINA ${i + 1} =====\\n${p.join('\\n')}`).join('\\n\\n');
       setExtractedRawText(txt);
-      console.log('[rawText] set, length:', txt.length);
-    } catch (e) {
-      console.warn('[rawText] failed:', e);
+    } catch {
+      // Se falhar (ex.: senha errada), ignora — o erro real vem abaixo
     }
 
     try {
