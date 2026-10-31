@@ -1574,7 +1574,7 @@ function AppContent() {
       /** Fim do período da fatura (fallback quando o vencimento não vem no PDF) */
       statementPeriodEnd?: string;
     } = {}
-  ): Promise<{ imported: number; skipped: number; futureInstallments: number }> => {
+  ): Promise<{ imported: number; skipped: number; futureInstallments: number; skippedTransactions?: any[]; futureInstallmentsList?: Array<{ description: string; amount: number; installment: number; totalInstallments: number; dueDate: string }> }> => {
     if (!user) throw new Error('Sessão expirada. Faça login novamente.');
 
     const accountId = selectedAccountId || accounts.find(acc => acc.type === 'credit' || acc.type === 'hybrid')?.id || accounts[0]?.id;
@@ -1619,12 +1619,19 @@ function AppContent() {
 
     const { newTransactions, skipped } = filterDuplicates(extractedTransactions, existingGroups, existingByDate);
     if (newTransactions.length === 0) {
-      return { imported: 0, skipped: skipped.length, futureInstallments: 0 };
+      return {
+        imported: 0,
+        skipped: skipped.length,
+        futureInstallments: 0,
+        skippedTransactions: skipped,
+        futureInstallmentsList: [],
+      };
     }
 
     const colRef = collection(db, 'transactions');
     const payloads: any[] = [];
     let futureInstallments = 0;
+    const futureInstallmentsList: Array<{ description: string; amount: number; installment: number; totalInstallments: number; dueDate: string }> = [];
 
     const hasClosingInfo = !!creditAccount &&
       (creditAccount.type === 'credit' || creditAccount.type === 'hybrid') &&
@@ -1676,6 +1683,13 @@ function AppContent() {
           dueDate: Timestamp.fromDate(entry.dueDate),
         });
         futureInstallments++;
+        futureInstallmentsList.push({
+          description: base.description,
+          amount: base.amount,
+          installment: entry.installment!,
+          totalInstallments: base.totalInstallments,
+          dueDate: entry.dueDate.toISOString().slice(0, 10),
+        });
       });
     });
 
@@ -1697,6 +1711,8 @@ function AppContent() {
       imported: newTransactions.length,
       skipped: skipped.length,
       futureInstallments,
+      skippedTransactions: skipped,
+      futureInstallmentsList,
     };
   };
   const handleDeleteAccount = async (id: string) => {
