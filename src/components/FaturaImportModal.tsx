@@ -66,6 +66,7 @@ export default function FaturaImportModal({ onClose, onImport, accounts, categor
   const [summary, setSummary] = useState<ImportSummary | null>(null);
   const [createFutureInstallments, setCreateFutureInstallments] = useState(true);
   const [processingStep, setProcessingStep] = useState(0);
+  const [invoiceDueDate, setInvoiceDueDate] = useState('');
 
   // Filtra apenas contas de crédito/híbridas
   const creditAccounts = accounts.filter(acc => acc.type === 'credit' || acc.type === 'hybrid');
@@ -118,6 +119,7 @@ export default function FaturaImportModal({ onClose, onImport, accounts, categor
     try {
       const extracted = await extractFaturaFromPdf(selected, { categories: categoryOptions });
       setResult(extracted);
+      setInvoiceDueDate(extracted.invoiceDueDate || '');
 
       if (extracted.transactions.length === 0) {
         setError('Nenhum lançamento foi extraído da fatura. Verifique se o PDF está legível (com texto selecionável, não imagem).');
@@ -208,7 +210,7 @@ export default function FaturaImportModal({ onClose, onImport, accounts, categor
     try {
       const importSummary = await onImport(result.transactions, selectedAccountId, {
         createFutureInstallments,
-        invoiceDueDate: result.invoiceDueDate,
+        invoiceDueDate: invoiceDueDate || result.invoiceDueDate,
         statementPeriodEnd: result.statementPeriodEnd,
       });
       setSummary(importSummary);
@@ -374,6 +376,22 @@ export default function FaturaImportModal({ onClose, onImport, accounts, categor
             )}
           </div>
 
+          {/* Vencimento da fatura */}
+          <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-100 dark:border-slate-700">
+            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+              Vencimento desta fatura
+            </label>
+            <input
+              type="date"
+              value={invoiceDueDate}
+              onChange={(e) => setInvoiceDueDate(e.target.value)}
+              className="w-full text-sm px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
+            />
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+              É o que define em qual fatura os lançamentos entram. Confira com o PDF: parcelas antigas (ex.: 5/6 de uma compra de maio) também caem nesta fatura.
+            </p>
+          </div>
+
           {/* Botões de navegação */}
           <div className="flex gap-3 pt-2">
             <button
@@ -426,11 +444,11 @@ export default function FaturaImportModal({ onClose, onImport, accounts, categor
           <div className="flex items-start gap-2 text-xs bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl border border-slate-100 dark:border-slate-700">
             <Calendar className="w-4 h-4 mt-0.5 text-indigo-500 flex-shrink-0" />
             <span className="text-slate-600 dark:text-slate-400">
-              {result.invoiceDueDate ? (
+              {invoiceDueDate ? (
                 <>
                   Fatura com vencimento em{' '}
                   <strong className="text-slate-900 dark:text-slate-100">
-                    {result.invoiceDueDate.split('-').reverse().join('/')}
+                    {invoiceDueDate.split('-').reverse().join('/')}
                   </strong>{' '}
                   — os lançamentos entram nessa fatura, mesmo os parcelados antigos (ex.: 5/6 de uma compra de maio).
                 </>
