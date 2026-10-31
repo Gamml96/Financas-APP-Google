@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useEffect, useMemo, Component, useRef } from 'react';
+import { normalize as normalizeText } from './services/faturaParser';
 import { 
   auth, 
   db, 
@@ -1521,6 +1522,10 @@ function AppContent() {
           await addDoc(collection(db, 'transactions'), transactionData);
         }
       }
+      // Aprende a categoria para futuras sugestões (manual e importação)
+      if (baseData.description && baseData.category) {
+        handleLearnCategory(baseData.description, baseData.category).catch(() => {});
+      }
       setShowAddModal(false);
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, 'transactions');
@@ -3028,6 +3033,7 @@ function AppContent() {
                   categories={allCategories}
                   accounts={accounts}
                   transactions={transactions}
+                  learnedCategories={learnedCategories}
                   formatCurrency={formatCurrency}
                 />
               </div>
@@ -3068,6 +3074,7 @@ function AppContent() {
                   accounts={accounts}
                   initialData={editingTransaction}
                   transactions={transactions}
+                  learnedCategories={learnedCategories}
                   formatCurrency={formatCurrency}
                 />
               </div>
@@ -4747,7 +4754,7 @@ function DebitAuditView({ transactions, accounts, onEdit, onDelete, categories, 
   );
 }
 
-function TransactionForm({ onSubmit, onCancel, categories: allCategories, accounts, initialData, transactions, formatCurrency }: { onSubmit: (data: any) => Promise<void>, onCancel: () => void, categories: Category[], accounts: Account[], initialData?: Transaction, transactions: Transaction[], formatCurrency: (val: number) => string }) {
+function TransactionForm({ onSubmit, onCancel, categories: allCategories, accounts, initialData, transactions, learnedCategories = {}, formatCurrency }: { onSubmit: (data: any) => Promise<void>, onCancel: () => void, categories: Category[], accounts: Account[], initialData?: Transaction, transactions: Transaction[], learnedCategories?: Record<string, string>, formatCurrency: (val: number) => string }) {
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [updateFuture, setUpdateFuture] = useState(false);
@@ -4791,12 +4798,22 @@ function TransactionForm({ onSubmit, onCancel, categories: allCategories, accoun
 
     const timer = setTimeout(() => {
       const desc = formData.description.toLowerCase().trim();
-      
-      // Find transactions with similar descriptions
+      const normalizedDesc = normalizeText(formData.description);
+
+      // 1. Aprendizado: se já aprendemos uma categoria para essa descrição, usa ela
+      const learned = learnedCategories[normalizedDesc];
+      if (learned && learned !== formData.category) {
+        setIsAutoCategorizing(true);
+        setFormData(prev => ({ ...prev, category: learned }));
+        setTimeout(() => setIsAutoCategorizing(false), 2000);
+        return;
+      }
+
+      // 2. Frequência: categoria mais comum em transações similares
       const matches = transactions.filter(t => 
         t.description && t.description.toLowerCase().includes(desc) && t.category
       );
-
+      
       if (matches.length > 0) {
         // Count frequency of categories for this description
         const frequency: Record<string, number> = {};
@@ -4816,7 +4833,7 @@ function TransactionForm({ onSubmit, onCancel, categories: allCategories, accoun
     }, 800); // Debounce
 
     return () => clearTimeout(timer);
-  }, [formData.description, transactions, initialData, formData.isSplit]);
+  }, [formData.description, transactions, initialData, formData.isSplit, learnedCategories]);
 
   const categories = useMemo(() => {
     return allCategories
