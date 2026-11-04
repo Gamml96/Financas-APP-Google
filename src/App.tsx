@@ -44,6 +44,7 @@ import {
   PieChart as PieChartIcon,
   ChevronRight,
   ChevronLeft,
+  ChevronDown,
   Calendar,
   Tag,
   Search,
@@ -174,6 +175,9 @@ import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
 import FaturaImportModal from './components/FaturaImportModal';
+import { useBodyScrollLock } from './hooks/useBodyScrollLock';
+import { useSheetDrag } from './hooks/useSheetDrag';
+import { useIsMobile } from './hooks/useIsMobile';
 import { hashGroupId, filterDuplicates, transactionKey } from './services/faturaDedup';
 import { buildFaturaSchedule } from './services/faturaSchedule';
 
@@ -433,64 +437,119 @@ function Logo({ className, iconClassName }: { className?: string, iconClassName?
   );
 }
 
-function BottomNav({ activeView, setActiveView, onAdd, onAccounts, onCategories, onSettings, onInvoices }: { 
-  activeView: string, 
-  setActiveView: (v: any) => void, 
+function BottomNav({ activeView, setActiveView, onAdd, onAccounts, onCategories, onSettings, onInvoices, onBudgets }: {
+  activeView: string,
+  setActiveView: (v: any) => void,
   onAdd: () => void,
   onAccounts: () => void,
   onCategories: () => void,
   onSettings: () => void,
-  onInvoices: () => void
+  onInvoices: () => void,
+  onBudgets: () => void
 }) {
+  const [showMore, setShowMore] = useState(false);
+  useBodyScrollLock(showMore);
+
+  const moreItems = [
+    { label: 'Categorias', icon: Tag, onClick: onCategories },
+    { label: 'Orçamentos', icon: PieChartIcon, onClick: onBudgets },
+    { label: 'Ajustes', icon: Settings, onClick: onSettings },
+  ];
+
   return (
-    <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 px-1 py-3 z-40 flex justify-between items-center pb-[calc(1.5rem+var(--sab,0px))]">
-      <button 
-        onClick={() => setActiveView('dashboard')}
-        className={cn(
-          "flex flex-col items-center gap-1 flex-1 transition-colors",
-          activeView === 'dashboard' ? "text-indigo-600" : "text-slate-400 dark:text-slate-500"
+    <>
+      {/* "Mais" sheet: acesso a Categorias, Orçamentos e Ajustes no celular */}
+      <AnimatePresence>
+        {showMore && (
+          <div className="md:hidden fixed inset-0 z-50">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowMore(false)}
+              className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ y: 60, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 60, opacity: 0 }}
+              transition={{ type: 'spring', damping: 26, stiffness: 320 }}
+              className="absolute bottom-0 left-0 right-0 bg-white dark:bg-slate-900 rounded-t-3xl p-4 pb-[calc(1.25rem+var(--sab,0px))] shadow-2xl"
+            >
+              <div className="w-10 h-1 bg-slate-200 dark:bg-slate-700 rounded-full mx-auto mb-4" />
+              <div className="grid grid-cols-3 gap-3">
+                {moreItems.map((item) => (
+                  <button
+                    key={item.label}
+                    onClick={() => {
+                      setShowMore(false);
+                      item.onClick();
+                    }}
+                    className="flex flex-col items-center gap-2 py-4 rounded-2xl bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 active:scale-95 transition-all"
+                  >
+                    <item.icon className="w-5 h-5" />
+                    <span className="text-[11px] font-bold">{item.label}</span>
+                  </button>
+                ))}
+              </div>
+            </motion.div>
+          </div>
         )}
-      >
-        <LayoutDashboard className="w-5 h-5" />
-        <span className="text-[9px] font-bold">Início</span>
-      </button>
+      </AnimatePresence>
 
-      <button 
-        onClick={onInvoices}
-        className={cn(
-          "flex flex-col items-center gap-1 flex-1 transition-colors",
-          (activeView === 'invoices' || activeView === 'debit_audit') ? "text-indigo-600" : "text-slate-400 dark:text-slate-500"
-        )}
-      >
-        <FileText className="w-5 h-5" />
-        <span className="text-[9px] font-bold">Auditorias</span>
-      </button>
-
-      <div className="flex-1 flex justify-center">
+      <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 px-1 py-3 z-40 flex justify-between items-center pb-[calc(1.5rem+var(--sab,0px))]">
         <button 
-          onClick={onAdd}
-          className="bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 p-3 rounded-full -mt-10 shadow-md shadow-indigo-100 dark:shadow-none border-4 border-white dark:border-slate-900 active:scale-95 transition-all"
+          onClick={() => setActiveView('dashboard')}
+          className={cn(
+            "flex flex-col items-center gap-1 flex-1 transition-colors",
+            activeView === 'dashboard' ? "text-indigo-600" : "text-slate-400 dark:text-slate-500"
+          )}
         >
-          <Plus className="w-6 h-6" />
+          <LayoutDashboard className="w-5 h-5" />
+          <span className="text-[9px] font-bold">Início</span>
+        </button>
+
+        <button 
+          onClick={onInvoices}
+          className={cn(
+            "flex flex-col items-center gap-1 flex-1 transition-colors",
+            (activeView === 'invoices' || activeView === 'debit_audit') ? "text-indigo-600" : "text-slate-400 dark:text-slate-500"
+          )}
+        >
+          <CreditCard className="w-5 h-5" />
+          <span className="text-[9px] font-bold">Faturas</span>
+        </button>
+
+        <div className="flex-1 flex justify-center">
+          <button 
+            onClick={onAdd}
+            aria-label="Nova transação"
+            className="bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 p-3 rounded-full -mt-10 shadow-md shadow-indigo-100 dark:shadow-none border-4 border-white dark:border-slate-900 active:scale-95 transition-all"
+          >
+            <Plus className="w-6 h-6" />
+          </button>
+        </div>
+
+        <button 
+          onClick={onAccounts}
+          className="flex flex-col items-center gap-1 flex-1 text-slate-400 dark:text-slate-500 active:text-indigo-600 transition-colors"
+        >
+          <Wallet className="w-5 h-5" />
+          <span className="text-[9px] font-bold">Contas</span>
+        </button>
+
+        <button 
+          onClick={() => setShowMore(true)}
+          className={cn(
+            "flex flex-col items-center gap-1 flex-1 transition-colors",
+            showMore ? "text-indigo-600" : "text-slate-400 dark:text-slate-500"
+          )}
+        >
+          <MoreHorizontal className="w-5 h-5" />
+          <span className="text-[9px] font-bold">Mais</span>
         </button>
       </div>
-
-      <button 
-        onClick={onAccounts}
-        className="flex flex-col items-center gap-1 flex-1 text-slate-400 dark:text-slate-500 active:text-indigo-600 transition-colors"
-      >
-        <Wallet className="w-5 h-5" />
-        <span className="text-[9px] font-bold">Contas</span>
-      </button>
-
-      <button 
-        onClick={onCategories}
-        className="flex flex-col items-center gap-1 flex-1 text-slate-400 dark:text-slate-500 active:text-indigo-600 transition-colors"
-      >
-        <Tag className="w-5 h-5" />
-        <span className="text-[9px] font-bold">Categorias</span>
-      </button>
-    </div>
+    </>
   );
 }
 
@@ -534,6 +593,23 @@ function AppContent() {
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [showNotificationCenter, setShowNotificationCenter] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
+
+  // Trava o scroll do fundo enquanto qualquer modal estiver aberto (essencial no celular)
+  useBodyScrollLock(
+    showAddModal ||
+    Boolean(editingTransaction) ||
+    Boolean(transactionToDelete) ||
+    showAccountModal ||
+    showCategoryModal ||
+    showBudgetModal ||
+    showImportModal ||
+    showFaturaModal ||
+    showResetModal ||
+    showSettingsModal ||
+    showNotificationCenter
+  );
+  useSheetDrag();
+
   const [activeView, setActiveView] = useState<'dashboard' | 'invoices' | 'debit_audit'>('dashboard');
   const [listMode, setListMode] = useState<'detailed' | 'compact'>('compact');
   const [filterMonth, setFilterMonth] = useState(new Date());
@@ -543,9 +619,14 @@ function AppContent() {
   const [paymentTypeFilter, setPaymentTypeFilter] = useState<'all' | 'credit' | 'debit'>('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedAccountId, setSelectedAccountId] = useState<string>('all');
+  const [filtersCollapsed, setFiltersCollapsed] = useState(true);
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [isOffline, setIsOffline] = useState(() => typeof navigator !== 'undefined' ? !navigator.onLine : false);
-  const [toast, setToast] = useState<{ message: string, type: 'success' | 'error' | 'info' } | null>(null);
+  const [toast, setToast] = useState<{
+    message: string;
+    type: 'success' | 'error' | 'info';
+    action?: { label: string; onClick: () => void };
+  } | null>(null);
 
   // Online/Offline handling
   useEffect(() => {
@@ -610,6 +691,19 @@ function AppContent() {
     }).format(value);
   };
 
+  /** Versão sem centavos, para eixos de gráfico (também respeita o modo privado). */
+  const formatCurrencyCompact = (value: number) => {
+    if (isPrivateMode) return 'R$ ••••';
+    return new Intl.NumberFormat('pt-BR', {
+      style: 'currency',
+      currency: 'BRL',
+      maximumFractionDigits: 0,
+    }).format(value);
+  };
+
+  /** Texto mascarado quando o modo privado está ativo (mesmo para eixos). */
+  const formatCurrencyMasked = () => 'R$ ••••';
+
   const dailyTip = useMemo(() => {
     const today = new Date();
     const dateString = `${today.getFullYear()}-${today.getMonth()}-${today.getDate()}`;
@@ -622,10 +716,10 @@ function AppContent() {
     return FINANCIAL_TIPS[index];
   }, []);
 
-  // Toast auto-hide
+  // Toast auto-hide (mais tempo quando tem "Desfazer")
   useEffect(() => {
     if (toast) {
-      const timer = setTimeout(() => setToast(null), 5000);
+      const timer = setTimeout(() => setToast(null), toast.action ? 8000 : 5000);
       return () => clearTimeout(timer);
     }
   }, [toast]);
@@ -773,8 +867,8 @@ function AppContent() {
       const totalAmount = upcomingBills.reduce((sum, tx) => sum + (Number(tx.amount) || 0), 0);
       const title = upcomingBills.length === 1 ? "Conta a vencer em breve!" : "Contas a vencer em breve!";
       const body = upcomingBills.length === 1 
-        ? `A conta "${upcomingBills[0].description || upcomingBills[0].category}" de ${upcomingBills[0].amount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} vence em ${format(upcomingBills[0].dueDate instanceof Timestamp ? upcomingBills[0].dueDate.toDate() : new Date(upcomingBills[0].dueDate), 'dd/MM/yyyy')}.`
-        : `Você tem ${upcomingBills.length} contas vencendo nos próximos dias, totalizando ${totalAmount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}.`;
+        ? `A conta "${upcomingBills[0].description || upcomingBills[0].category}" de ${formatCurrency(upcomingBills[0].amount)} vence em ${format(upcomingBills[0].dueDate instanceof Timestamp ? upcomingBills[0].dueDate.toDate() : new Date(upcomingBills[0].dueDate), 'dd/MM/yyyy')}.`
+        : `Você tem ${upcomingBills.length} contas vencendo nos próximos dias, totalizando ${formatCurrency(totalAmount)}.`;
 
       try {
         if ("serviceWorker" in navigator) {
@@ -1894,14 +1988,53 @@ function AppContent() {
     }
   };
 
+  /** Guarda o documento exatamente como estava, para poder recriar no "Desfazer". */
+  const snapshotForUndo = (tx: Transaction) => {
+    const { id, ...data } = tx as any;
+    return { id: id as string, data };
+  };
+
+  /** Recria documentos apagados preservando o mesmo ID. */
+  const restoreTransactions = async (docs: Array<{ id: string; data: any }>) => {
+    if (docs.length === 0) return;
+    try {
+      const batch = writeBatch(db);
+      docs.forEach((d) => batch.set(doc(db, 'transactions', d.id), d.data));
+      await batch.commit();
+      setToast({
+        message: docs.length > 1 ? `${docs.length} transações restauradas!` : 'Transação restaurada!',
+        type: 'success',
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.CREATE, 'transactions-undo');
+      setToast({ message: 'Não foi possível desfazer a exclusão.', type: 'error' });
+    }
+  };
+
+  /** Toast de exclusão com botão "Desfazer". */
+  const toastDeleted = (message: string, docs: Array<{ id: string; data: any }>) => {
+    setToast({
+      message,
+      type: 'success',
+      action: {
+        label: 'Desfazer',
+        onClick: () => {
+          setToast(null);
+          restoreTransactions(docs);
+        },
+      },
+    });
+  };
+
   const handleDeleteTransaction = async (id: string) => {
     const tx = transactions.find(t => t.id === id);
     if (tx?.groupId) {
       setTransactionToDelete(tx);
-    } else {
+    } else if (tx) {
       try {
+        const snapshot = snapshotForUndo(tx);
         await deleteDoc(doc(db, 'transactions', id));
-        setToast({ message: "Transação excluída com sucesso!", type: 'success' });
+        toastDeleted('Transação excluída.', [snapshot]);
       } catch (error) {
         handleFirestoreError(error, OperationType.DELETE, `transactions/${id}`);
       }
@@ -2305,37 +2438,111 @@ function AppContent() {
                       </button>
                     )}
                   </div>
-
-                  {/* Clear All Filters */}
-                  {(dateRange || typeFilter !== 'all' || categoryFilter !== 'all' || searchTerm || selectedAccountId !== 'all') && (
-                    <button
-                      onClick={() => {
-                        setDateRange(null);
-                        setTypeFilter('all');
-                        setCategoryFilter('all');
-                        setSearchTerm('');
-                        setSelectedAccountId('all');
-                        setPaymentTypeFilter('all');
-                        setFilterMonth(new Date());
-                      }}
-                      className="flex items-center justify-center gap-2 px-4 py-2 bg-rose-50 dark:bg-rose-900/20 text-rose-600 dark:text-rose-400 rounded-xl text-sm font-bold transition-all hover:bg-rose-100 dark:hover:bg-rose-900/40 h-11"
-                      title="Limpar todos os filtros"
-                    >
-                      <X className="w-4 h-4" />
-                      <span className="hidden sm:inline">Limpar</span>
-                    </button>
-                  )}
-
-                  {/* Export Button */}
-                  <button
-                    onClick={handleExportCSV}
-                    disabled={displayTransactions.length === 0}
-                    className="flex items-center justify-center gap-2 px-6 py-2 bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 rounded-xl text-sm font-bold transition-all hover:bg-slate-800 dark:hover:bg-white disabled:opacity-50 disabled:cursor-not-allowed h-11"
-                  >
-                    <Download className="w-4 h-4" />
-                    <span className="hidden xl:inline">Exportar</span>
-                  </button>
                 </div>
+              </div>
+
+              {/* Filtros secundários recolhíveis no mobile */}
+              <div className="md:hidden mt-3">
+                <button
+                  onClick={() => setFiltersCollapsed(prev => !prev)}
+                  aria-expanded={!filtersCollapsed}
+                  className="w-full flex items-center justify-between px-4 py-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm text-sm font-bold text-slate-700 dark:text-slate-200"
+                >
+                  <span className="flex items-center gap-2">
+                    <Filter className="w-4 h-4 text-indigo-500" />
+                    Filtros
+                    {(typeFilter !== 'all' || categoryFilter !== 'all' || paymentTypeFilter !== 'all' || searchTerm || dateRange) && (
+                      <span className="w-2 h-2 rounded-full bg-indigo-500" />
+                    )}
+                  </span>
+                  <ChevronDown className={cn("w-4 h-4 transition-transform", !filtersCollapsed && "rotate-180")} />
+                </button>
+
+                <AnimatePresence>
+                  {!filtersCollapsed && (
+                    <motion.div
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: 'auto', opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      className="overflow-hidden"
+                    >
+                      <div className="flex flex-col gap-3 mt-3">
+                        {/* Quick Filter */}
+                        <div className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm h-11">
+                          <Calendar className="w-4 h-4 text-indigo-500 shrink-0" />
+                          <select
+                            onChange={(e) => handleQuickFilter(e.target.value)}
+                            className="text-sm font-bold border-none bg-transparent focus:ring-0 p-0 w-full cursor-pointer text-slate-700 dark:text-slate-200"
+                            value=""
+                          >
+                            <option value="" disabled>Período Rápido</option>
+                            <option value="today">Hoje</option>
+                            <option value="yesterday">Ontem</option>
+                            <option value="last7">Últimos 7 dias</option>
+                            <option value="last30">Últimos 30 dias</option>
+                            <option value="thisMonth">Este Mês</option>
+                            <option value="lastMonth">Mês Passado</option>
+                          </select>
+                        </div>
+
+                        {/* Date Range */}
+                        <div className="flex items-center gap-3 px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm h-11">
+                          <Filter className="w-4 h-4 text-slate-400 shrink-0" />
+                          <div className="flex items-center gap-2 shrink-0">
+                            <div className="flex flex-col">
+                              <span className="text-[8px] font-bold text-slate-400 uppercase leading-none mb-0.5">Início</span>
+                              <input
+                                type="date"
+                                value={dateRange?.start || ''}
+                                onChange={(e) => setDateRange({ start: e.target.value, end: dateRange?.end || '' })}
+                                className="text-xs font-bold border-none bg-transparent focus:ring-0 p-0 w-[105px] text-slate-600 dark:text-slate-300"
+                              />
+                            </div>
+                            <span className="text-slate-300 dark:text-slate-600 font-bold mt-2">→</span>
+                            <div className="flex flex-col">
+                              <span className="text-[8px] font-bold text-slate-400 uppercase leading-none mb-0.5">Fim</span>
+                              <input
+                                type="date"
+                                value={dateRange?.end || ''}
+                                onChange={(e) => setDateRange({ start: dateRange?.start || '', end: e.target.value })}
+                                className="text-xs font-bold border-none bg-transparent focus:ring-0 p-0 w-[105px] text-slate-600 dark:text-slate-300"
+                              />
+                            </div>
+                          </div>
+                          {dateRange && (
+                            <button
+                              onClick={() => setDateRange(null)}
+                              className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full text-slate-400 hover:text-rose-500 transition-colors"
+                              title="Limpar período customizado"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Clear All Filters */}
+                        {(dateRange || typeFilter !== 'all' || categoryFilter !== 'all' || searchTerm || selectedAccountId !== 'all') && (
+                          <button
+                            onClick={() => {
+                              setDateRange(null);
+                              setTypeFilter('all');
+                              setCategoryFilter('all');
+                              setSearchTerm('');
+                              setSelectedAccountId('all');
+                              setPaymentTypeFilter('all');
+                              setFilterMonth(new Date());
+                            }}
+                            className="flex items-center justify-center gap-2 px-4 py-2 bg-rose-50 dark:bg-rose-900/20 text-rose-600 dark:text-rose-400 rounded-xl text-sm font-bold transition-all hover:bg-rose-100 dark:hover:bg-rose-900/40 h-11"
+                            title="Limpar todos os filtros"
+                          >
+                            <X className="w-4 h-4" />
+                            <span>Limpar</span>
+                          </button>
+                        )}
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
             </div>
 
@@ -2407,7 +2614,7 @@ function AppContent() {
                       axisLine={false}
                       tickLine={false}
                       tick={{ fill: '#94a3b8', fontSize: 10 }}
-                      tickFormatter={(value) => value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 })}
+                      tickFormatter={(value) => formatCurrencyCompact(value)}
                     />
                     <Tooltip 
                       contentStyle={{ 
@@ -2439,26 +2646,26 @@ function AppContent() {
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                   <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Extrato</h3>
                   
-                  <div className="flex items-center gap-2 w-full sm:w-auto">
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
                     <button 
                       onClick={() => setShowFaturaModal(true)}
-                      className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-400 px-4 py-2 rounded-xl hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-all font-semibold text-sm shadow-sm active:scale-95"
+                      className="w-full sm:w-auto flex items-center justify-center gap-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-400 px-4 py-2.5 rounded-xl hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-all font-semibold text-sm shadow-sm active:scale-95"
                     >
-                      <FileText className="w-4 h-4" />
-                      <span>Importar Fatura (PDF)</span>
+                      <FileText className="w-4 h-4 shrink-0" />
+                      <span className="truncate">Importar Fatura (PDF)</span>
                     </button>
                     <button 
                       onClick={() => setShowImportModal(true)}
-                      className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 px-4 py-2 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700 transition-all font-semibold text-sm shadow-sm active:scale-95"
+                      className="w-full sm:w-auto flex items-center justify-center gap-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 px-4 py-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700 transition-all font-semibold text-sm shadow-sm active:scale-95"
                     >
-                      <RefreshCcw className="w-4 h-4" />
-                      <span>Importar CSV/XLSX</span>
+                      <RefreshCcw className="w-4 h-4 shrink-0" />
+                      <span className="truncate">Importar CSV/XLSX</span>
                     </button>
                     <button 
                       onClick={() => setShowAddModal(true)}
-                      className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-xl hover:bg-indigo-700 transition-all font-semibold text-sm active:scale-95 shadow-sm shadow-indigo-200 dark:shadow-none"
+                      className="w-full sm:w-auto flex items-center justify-center gap-2 bg-indigo-600 text-white px-4 py-2.5 rounded-xl hover:bg-indigo-700 transition-all font-semibold text-sm active:scale-95 shadow-sm shadow-indigo-200 dark:shadow-none"
                     >
-                      <Plus className="w-4 h-4" />
+                      <Plus className="w-4 h-4 shrink-0" />
                       <span>Nova Transação</span>
                     </button>
                   </div>
@@ -2786,7 +2993,7 @@ function AppContent() {
                               {percent}%
                             </span>
                             <span className="font-medium text-slate-900 dark:text-slate-100">
-                              {cat.value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                              {formatCurrency(cat.value)}
                             </span>
                           </div>
                         </div>
@@ -2821,7 +3028,7 @@ function AppContent() {
                           <div>
                             <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{budget.category}</p>
                             <p className="text-xs text-slate-500 dark:text-slate-400">
-                              {budget.spent.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} de {budget.amount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                              {formatCurrency(budget.spent)} de {formatCurrency(budget.amount)}
                             </p>
                           </div>
                           <span className={cn(
@@ -2918,6 +3125,7 @@ function AppContent() {
         onCategories={() => setShowCategoryModal(true)}
         onSettings={() => setShowSettingsModal(true)}
         onInvoices={() => setActiveView('invoices')}
+        onBudgets={() => setShowBudgetModal(true)}
       />
 
       {/* Modals */}
@@ -2925,7 +3133,7 @@ function AppContent() {
 
 
         {showBudgetModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="modal-root fixed inset-0 z-50 flex items-center justify-center p-4">
             <motion.div 
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -2934,10 +3142,10 @@ function AppContent() {
               className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
             />
             <motion.div 
-              initial={{ scale: 0.95, opacity: 0, y: 20 }}
-              animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.95, opacity: 0, y: 20 }}
-              className="bg-white dark:bg-slate-900 w-full max-w-md rounded-2xl shadow-2xl relative z-10 overflow-y-auto max-h-[90vh]"
+              initial={{ y: 40, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 40, opacity: 0 }}
+              className="modal-panel bg-white dark:bg-slate-900 w-full max-w-md rounded-2xl shadow-2xl relative z-10 overflow-y-auto max-h-[90vh]"
             >
               <div className="p-6">
                 <div className="flex justify-between items-center mb-6">
@@ -2951,6 +3159,7 @@ function AppContent() {
                   budgets={budgets}
                   categories={allCategories.filter(c => c.type === 'expense' || c.type === 'both')}
                   currentMonth={format(filterMonth, 'yyyy-MM')}
+                  formatValue={formatCurrency}
                   onSave={async (category, amount) => {
                     if (!user) return;
                     const monthStr = format(filterMonth, 'yyyy-MM');
@@ -2984,18 +3193,36 @@ function AppContent() {
             initial={{ opacity: 0, y: 50 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 50 }}
-            className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[100]"
+            role="status"
+            aria-live="polite"
+            className="fixed left-1/2 -translate-x-1/2 z-[100] w-auto max-w-[calc(100%-2rem)] md:max-w-md bottom-[calc(7rem+var(--sab,0px))] md:bottom-8"
           >
             <div className={cn(
-              "px-6 py-3 rounded-2xl shadow-lg border flex items-center gap-3",
+              "px-4 py-3 rounded-2xl shadow-lg border flex items-center gap-3",
               toast.type === 'success' ? "bg-emerald-50 border-emerald-100 text-emerald-700" :
               toast.type === 'error' ? "bg-rose-50 border-rose-100 text-rose-700" :
               "bg-slate-800 border-slate-700 text-white"
             )}>
-              {toast.type === 'success' && <CheckCircle2 className="w-5 h-5" />}
-              {toast.type === 'error' && <AlertCircle className="w-5 h-5" />}
-              <span className="text-sm font-medium">{toast.message}</span>
-              <button onClick={() => setToast(null)} className="ml-2 hover:opacity-70">
+              {toast.type === 'success' && <CheckCircle2 className="w-5 h-5 shrink-0" />}
+              {toast.type === 'error' && <AlertCircle className="w-5 h-5 shrink-0" />}
+              <span className="text-sm font-medium flex-1 min-w-0 break-words">{toast.message}</span>
+              {toast.action && (
+                <button
+                  onClick={() => {
+                    const action = toast.action!;
+                    setToast(null);
+                    action.onClick();
+                  }}
+                  className="shrink-0 text-sm font-bold underline underline-offset-2 hover:opacity-80"
+                >
+                  {toast.action.label}
+                </button>
+              )}
+              <button
+                onClick={() => setToast(null)}
+                aria-label="Fechar aviso"
+                className="ml-1 shrink-0 p-1 rounded-lg hover:opacity-70"
+              >
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -3005,7 +3232,7 @@ function AppContent() {
 
       <AnimatePresence>
         {showAddModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="modal-root fixed inset-0 z-50 flex items-center justify-center p-4">
             <motion.div 
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -3014,10 +3241,10 @@ function AppContent() {
               className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
             />
             <motion.div 
-              initial={{ scale: 0.95, opacity: 0, y: 20 }}
-              animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.95, opacity: 0, y: 20 }}
-              className="bg-white dark:bg-slate-900 w-full max-w-md rounded-2xl shadow-2xl relative z-10 overflow-y-auto max-h-[90vh]"
+              initial={{ y: 40, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 40, opacity: 0 }}
+              className="modal-panel bg-white dark:bg-slate-900 w-full max-w-md rounded-2xl shadow-2xl relative z-10 overflow-y-auto max-h-[90vh]"
             >
               <div className="p-6">
                 <div className="flex justify-between items-center mb-6">
@@ -3045,7 +3272,7 @@ function AppContent() {
       {/* Edit Transaction Modal */}
       <AnimatePresence>
         {editingTransaction && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="modal-root fixed inset-0 z-50 flex items-center justify-center p-4">
             <motion.div 
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -3054,10 +3281,10 @@ function AppContent() {
               className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
             />
             <motion.div 
-              initial={{ scale: 0.95, opacity: 0, y: 20 }}
-              animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.95, opacity: 0, y: 20 }}
-              className="bg-white dark:bg-slate-900 w-full max-w-md rounded-2xl shadow-2xl relative z-10 overflow-y-auto max-h-[90vh]"
+              initial={{ y: 40, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 40, opacity: 0 }}
+              className="modal-panel bg-white dark:bg-slate-900 w-full max-w-md rounded-2xl shadow-2xl relative z-10 overflow-y-auto max-h-[90vh]"
             >
               <div className="p-6">
                 <div className="flex justify-between items-center mb-6">
@@ -3085,7 +3312,7 @@ function AppContent() {
       {/* Import Modal */}
       <AnimatePresence>
         {showImportModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="modal-root fixed inset-0 z-50 flex items-center justify-center p-4">
             <motion.div 
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -3094,10 +3321,10 @@ function AppContent() {
               className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
             />
             <motion.div 
-              initial={{ scale: 0.95, opacity: 0, y: 20 }}
-              animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.95, opacity: 0, y: 20 }}
-              className="bg-white dark:bg-slate-900 w-full max-w-2xl rounded-2xl shadow-2xl relative z-10 overflow-y-auto max-h-[90vh]"
+              initial={{ y: 40, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 40, opacity: 0 }}
+              className="modal-panel bg-white dark:bg-slate-900 w-full max-w-2xl rounded-2xl shadow-2xl relative z-10 overflow-y-auto max-h-[90vh]"
             >
               <div className="p-6">
                 <div className="flex justify-between items-center mb-6">
@@ -3135,7 +3362,7 @@ function AppContent() {
       {/* Fatura PDF Import Modal (Gemini AI) */}
       <AnimatePresence>
         {showFaturaModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="modal-root fixed inset-0 z-50 flex items-center justify-center p-4">
             <motion.div 
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -3144,10 +3371,10 @@ function AppContent() {
               className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
             />
             <motion.div 
-              initial={{ scale: 0.95, opacity: 0, y: 20 }}
-              animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.95, opacity: 0, y: 20 }}
-              className="bg-white dark:bg-slate-900 w-full max-w-2xl rounded-2xl shadow-2xl relative z-10 overflow-y-auto max-h-[90vh]"
+              initial={{ y: 40, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 40, opacity: 0 }}
+              className="modal-panel bg-white dark:bg-slate-900 w-full max-w-2xl rounded-2xl shadow-2xl relative z-10 overflow-y-auto max-h-[90vh]"
             >
               <div className="p-6">
                 <div className="flex justify-between items-center mb-6">
@@ -3174,7 +3401,7 @@ function AppContent() {
       {/* Account Management Modal */}
       <AnimatePresence>
         {showAccountModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="modal-root fixed inset-0 z-50 flex items-center justify-center p-4">
             <motion.div 
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -3183,10 +3410,10 @@ function AppContent() {
               className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
             />
             <motion.div 
-              initial={{ scale: 0.95, opacity: 0, y: 20 }}
-              animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.95, opacity: 0, y: 20 }}
-              className="bg-white dark:bg-slate-900 w-full max-w-2xl rounded-2xl shadow-2xl relative z-10 overflow-y-auto max-h-[90vh]"
+              initial={{ y: 40, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 40, opacity: 0 }}
+              className="modal-panel bg-white dark:bg-slate-900 w-full max-w-2xl rounded-2xl shadow-2xl relative z-10 overflow-y-auto max-h-[90vh]"
             >
               <div className="p-6">
                 <div className="flex justify-between items-center mb-6">
@@ -3210,12 +3437,12 @@ function AppContent() {
 
       <AnimatePresence>
         {transactionToDelete && (
-          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
+          <div className="modal-root fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
             <motion.div 
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white dark:bg-slate-900 w-full max-w-md rounded-2xl shadow-2xl p-6"
+              initial={{ y: 40, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 40, opacity: 0 }}
+              className="modal-panel bg-white dark:bg-slate-900 w-full max-w-md rounded-2xl shadow-2xl p-6"
             >
               <div className="flex items-center gap-3 mb-4 text-rose-600">
                 <AlertTriangle className="w-6 h-6" />
@@ -3228,8 +3455,9 @@ function AppContent() {
                 <button
                   onClick={async () => {
                     try {
+                      const snapshot = snapshotForUndo(transactionToDelete);
                       await deleteDoc(doc(db, 'transactions', transactionToDelete.id));
-                      setToast({ message: "Transação excluída com sucesso!", type: 'success' });
+                      toastDeleted('Transação excluída.', [snapshot]);
                     } catch (error) {
                       handleFirestoreError(error, OperationType.DELETE, `transactions/${transactionToDelete.id}`);
                     }
@@ -3257,8 +3485,9 @@ function AppContent() {
                       futureTransactions.forEach(tx => {
                         batch.delete(doc(db, 'transactions', tx.id));
                       });
+                      const snapshots = futureTransactions.map(snapshotForUndo);
                       await batch.commit();
-                      setToast({ message: `${futureTransactions.length} transações excluídas com sucesso!`, type: 'success' });
+                      toastDeleted(`${futureTransactions.length} transações excluídas.`, snapshots);
                     } catch (error) {
                       handleFirestoreError(error, OperationType.DELETE, 'transactions-batch');
                     }
@@ -3282,7 +3511,7 @@ function AppContent() {
 
       <AnimatePresence>
         {showCategoryModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="modal-root fixed inset-0 z-50 flex items-center justify-center p-4">
             <motion.div 
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -3291,10 +3520,10 @@ function AppContent() {
               className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
             />
             <motion.div 
-              initial={{ scale: 0.95, opacity: 0, y: 20 }}
-              animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.95, opacity: 0, y: 20 }}
-              className="bg-white dark:bg-slate-900 w-full max-w-2xl rounded-2xl shadow-2xl relative z-10 overflow-y-auto max-h-[90vh]"
+              initial={{ y: 40, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 40, opacity: 0 }}
+              className="modal-panel bg-white dark:bg-slate-900 w-full max-w-2xl rounded-2xl shadow-2xl relative z-10 overflow-y-auto max-h-[90vh]"
             >
               <div className="p-6">
                 <div className="flex justify-between items-center mb-6">
@@ -3319,7 +3548,7 @@ function AppContent() {
 
       <AnimatePresence>
         {showNotificationCenter && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="modal-root fixed inset-0 z-50 flex items-center justify-center p-4">
             <motion.div 
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -3328,10 +3557,10 @@ function AppContent() {
               className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
             />
             <motion.div 
-              initial={{ scale: 0.95, opacity: 0, y: 20 }}
-              animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.95, opacity: 0, y: 20 }}
-              className="bg-white dark:bg-slate-900 w-full max-w-lg rounded-2xl shadow-2xl relative z-10 overflow-hidden flex flex-col max-h-[80vh]"
+              initial={{ y: 40, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 40, opacity: 0 }}
+              className="modal-panel bg-white dark:bg-slate-900 w-full max-w-lg rounded-2xl shadow-2xl relative z-10 overflow-hidden flex flex-col max-h-[80vh]"
             >
               <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-white dark:bg-slate-900">
                 <div className="flex items-center gap-3">
@@ -3460,7 +3689,7 @@ function AppContent() {
         )}
 
         {showSettingsModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="modal-root fixed inset-0 z-50 flex items-center justify-center p-4">
             <motion.div 
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -3469,10 +3698,10 @@ function AppContent() {
               className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
             />
             <motion.div 
-              initial={{ scale: 0.95, opacity: 0, y: 20 }}
-              animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.95, opacity: 0, y: 20 }}
-              className="bg-white dark:bg-slate-900 w-full max-w-lg rounded-2xl shadow-2xl relative z-10 overflow-y-auto max-h-[90vh]"
+              initial={{ y: 40, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 40, opacity: 0 }}
+              className="modal-panel bg-white dark:bg-slate-900 w-full max-w-lg rounded-2xl shadow-2xl relative z-10 overflow-y-auto max-h-[90vh]"
             >
               <div className="p-6">
                 <div className="flex justify-between items-center mb-6">
@@ -3495,7 +3724,7 @@ function AppContent() {
 
       <AnimatePresence>
         {showResetModal && (
-          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+          <div className="modal-root fixed inset-0 z-[60] flex items-center justify-center p-4">
             <motion.div 
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -3504,10 +3733,10 @@ function AppContent() {
               className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
             />
             <motion.div 
-              initial={{ scale: 0.95, opacity: 0, y: 20 }}
-              animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.95, opacity: 0, y: 20 }}
-              className="bg-white dark:bg-slate-900 w-full max-w-md rounded-2xl shadow-2xl relative z-10 overflow-y-auto max-h-[90vh] border border-slate-200 dark:border-slate-800"
+              initial={{ y: 40, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 40, opacity: 0 }}
+              className="modal-panel bg-white dark:bg-slate-900 w-full max-w-md rounded-2xl shadow-2xl relative z-10 overflow-y-auto max-h-[90vh] border border-slate-200 dark:border-slate-800"
             >
               <div className="p-8 text-center">
                 <div className="w-16 h-16 bg-rose-100 dark:bg-rose-900/40 text-rose-600 dark:text-rose-400 rounded-2xl flex items-center justify-center mx-auto mb-6">
@@ -4062,11 +4291,11 @@ function CategoryIcon({ iconName, className }: { iconName: string, className?: s
 }
 
 // Transaction Item Component
-function TransactionItem({ tx, categories, accounts, onEdit, onDelete, isConsolidated, onToggleExpand, formatValue }: { 
-  tx: Transaction, 
-  categories: Category[], 
+function TransactionItem({ tx, categories, accounts, onEdit, onDelete, isConsolidated, onToggleExpand, formatValue }: {
+  tx: Transaction,
+  categories: Category[],
   accounts: Account[],
-  onEdit: (tx: Transaction) => void, 
+  onEdit: (tx: Transaction) => void,
   onDelete: (id: string) => void,
   isConsolidated?: boolean,
   onToggleExpand?: () => void,
@@ -4077,17 +4306,89 @@ function TransactionItem({ tx, categories, accounts, onEdit, onDelete, isConsoli
   const cat = categories.find(c => c.name === tx.category) || DEFAULT_CATEGORIES[7];
   const account = accounts.find(a => a.id === tx.accountId);
 
+  // Swipe lateral no mobile: arrasta para a direita edita, para a esquerda exclui.
+  // Usa a propriedade CSS `translate` (não `transform`) para não brigar com a
+  // animação do framer-motion, e `touch-action: pan-y` para a lista continuar
+  // rolando na vertical normalmente.
+  const canSwipe = useIsMobile() && !isConsolidated;
+  const SWIPE_THRESHOLD = 70;
+  const cardRef = useRef<HTMLDivElement>(null);
+  const origin = useRef({ x: 0, y: 0 });
+  const axis = useRef<'none' | 'x' | 'y'>('none');
+  const dx = useRef(0);
+
+  const applyTranslate = (px: number, animate: boolean) => {
+    const el = cardRef.current;
+    if (!el) return;
+    el.style.transition = animate ? 'translate 200ms ease' : 'none';
+    el.style.translate = px ? `${px}px 0px` : '';
+  };
+
+  const onSwipeStart = (event: React.PointerEvent) => {
+    if (!canSwipe) return;
+    origin.current = { x: event.clientX, y: event.clientY };
+    axis.current = 'none';
+    dx.current = 0;
+  };
+
+  const onSwipeMove = (event: React.PointerEvent) => {
+    if (!canSwipe || axis.current === 'y') return;
+    const offsetX = event.clientX - origin.current.x;
+    const offsetY = event.clientY - origin.current.y;
+
+    if (axis.current === 'none') {
+      if (Math.abs(offsetX) < 10 && Math.abs(offsetY) < 10) return;
+      // Trava o eixo uma única vez: movimento mais vertical que horizontal
+      // é a rolagem da lista, não um swipe.
+      axis.current = Math.abs(offsetX) > Math.abs(offsetY) ? 'x' : 'y';
+    }
+    if (axis.current !== 'x') return;
+
+    dx.current = offsetX;
+    applyTranslate(offsetX, false);
+  };
+
+  const onSwipeEnd = () => {
+    if (!canSwipe) return;
+    const moved = dx.current;
+    axis.current = 'none';
+    dx.current = 0;
+    applyTranslate(0, true);
+
+    if (moved <= -SWIPE_THRESHOLD && onDelete) onDelete(tx.id);
+    else if (moved >= SWIPE_THRESHOLD && onEdit) onEdit(tx);
+  };
+
   return (
-    <motion.div 
-      layout
-      initial={{ opacity: 0, x: -10 }}
-      animate={{ opacity: 1, x: 0 }}
-      onDoubleClick={onToggleExpand}
-      className={cn(
-        "group flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors border border-transparent hover:border-slate-100 dark:hover:border-slate-800 gap-3 sm:gap-4",
-        isConsolidated && "cursor-pointer"
+    <div className="relative overflow-hidden rounded-xl">
+      {canSwipe && (
+        <>
+          <div className="absolute inset-y-0 left-0 w-24 flex items-center justify-start pl-5 bg-emerald-500 text-white text-[11px] font-bold uppercase tracking-wide">
+            <Edit className="w-3.5 h-3.5 mr-1" />
+            Editar
+          </div>
+          <div className="absolute inset-y-0 right-0 w-24 flex items-center justify-end pr-5 bg-rose-500 text-white text-[11px] font-bold uppercase tracking-wide">
+            Excluir
+            <Trash2 className="w-3.5 h-3.5 ml-1" />
+          </div>
+        </>
       )}
-    >
+      <motion.div 
+        ref={cardRef}
+        layout
+        initial={{ opacity: 0, x: -10 }}
+        animate={{ opacity: 1, x: 0 }}
+        onDoubleClick={onToggleExpand}
+        onPointerDown={onSwipeStart}
+        onPointerMove={onSwipeMove}
+        onPointerUp={onSwipeEnd}
+        onPointerCancel={onSwipeEnd}
+        style={canSwipe ? { touchAction: 'pan-y' } : undefined}
+        className={cn(
+          "relative z-10 bg-white dark:bg-slate-900 group flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors border border-transparent hover:border-slate-100 dark:hover:border-slate-800 gap-3 sm:gap-4",
+          isConsolidated && "cursor-pointer"
+        )}
+      >
       <div className="flex items-center gap-3 sm:gap-4 min-w-0 flex-1">
         <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center text-white shadow-sm shrink-0" style={{ backgroundColor: cat.color }}>
           <CategoryIcon iconName={cat.icon} className="w-4 h-4 sm:w-5 sm:h-5" />
@@ -4184,9 +4485,11 @@ function TransactionItem({ tx, categories, accounts, onEdit, onDelete, isConsoli
           </div>
         )}
       </div>
-    </motion.div>
+      </motion.div>
+    </div>
   );
 }
+
 
 function TransactionList({ transactions, categories, accounts, onDelete, onEdit, listMode, formatValue }: { transactions: Transaction[], categories: Category[], accounts: Account[], onDelete: (id: string) => void, onEdit: (tx: Transaction) => void, listMode: 'detailed' | 'compact', formatValue: (v: number) => string }) {
   const [expandedConsolidated, setExpandedConsolidated] = useState<Set<string>>(new Set());
@@ -4791,6 +5094,14 @@ function TransactionForm({ onSubmit, onCancel, categories: allCategories, accoun
     isSplit: initialData?.splits && initialData.splits.length > 0 ? true : false,
     splits: initialData?.splits ? initialData.splits.map(s => ({ category: s.category, amount: s.amount.toString() })) : [{ category: '', amount: '' }]
   });
+
+  // Conta padrão: se o formulário abriu antes das contas carregarem, o select
+  // mostrava a primeira conta mas o estado ficava vazio (erro "selecione uma conta").
+  useEffect(() => {
+    if (initialData || formData.accountId || accounts.length === 0) return;
+    const preferred = accounts.find(a => a.isFavorite)?.id || accounts[0].id;
+    setFormData(prev => (prev.accountId ? prev : { ...prev, accountId: preferred }));
+  }, [accounts, formData.accountId, initialData]);
 
   // Intelligent Categorization logic
   useEffect(() => {
@@ -6227,12 +6538,13 @@ function CategoryManager({ customCategories, allCategories, onAdd, onUpdate, onD
   );
 }
 
-function BudgetManager({ budgets, categories, currentMonth, onSave, onDelete }: { 
+function BudgetManager({ budgets, categories, currentMonth, onSave, onDelete, formatValue = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) }: { 
   budgets: Budget[], 
   categories: Category[], 
   currentMonth: string,
   onSave: (category: string, amount: number) => Promise<void>,
-  onDelete: (id: string) => Promise<void>
+  onDelete: (id: string) => Promise<void>,
+  formatValue?: (value: number) => string
 }) {
   const [newBudget, setNewBudget] = useState({
     category: categories[0]?.name || '',
@@ -6329,7 +6641,7 @@ function BudgetManager({ budgets, categories, currentMonth, onSave, onDelete }: 
                     </div>
                     <div>
                       <p className="font-semibold text-sm text-slate-900 dark:text-slate-100">{budget.category}</p>
-                      <p className="text-xs text-slate-500 dark:text-slate-400">Limite: {budget.amount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">Limite: {formatValue(budget.amount)}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-1">

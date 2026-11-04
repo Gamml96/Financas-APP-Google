@@ -47,3 +47,73 @@
     -webkit-overflow-scrolling: touch;
   }
 }
+
+/*
+ * Modais como bottom sheet no celular: sobem de baixo, ocupam a largura toda
+ * e respeitam a safe area do aparelho. No desktop continuam centralizados.
+ */
+@media (max-width: 767px) {
+  .modal-root {
+    align-items: flex-end;
+    padding: 0;
+  }
+
+  .modal-panel {
+    width: 100%;
+    max-width: 100%;
+    max-height: 92vh;
+    border-radius: 1.5rem 1.5rem 0 0;
+    padding-bottom: var(--sab, 0px);
+    overscroll-behavior: contain;
+  }
+
+  /* Alça de arrastar */
+  .modal-panel::before {
+    content: '';
+    display: block;
+    width: 40px;
+    height: 4px;
+    border-radius: 9999px;
+    background: #cbd5e1;
+    margin: 10px auto 0;
+    flex-shrink: 0;
+  }
+
+  .dark .modal-panel::before {
+    background: #475569;
+  }
+}
+
+/*
+ * Botão desabilitado: sem a barra cinza larga com um ícone flutuando.
+ * Apenas o ícone e o texto, sem o fundo "cheio" que atrai o olhar.
+ */
+@media (max-width: 767px) {
+  button:disabled,
+  button[disabled] {
+    background: transparent !important;
+    border-color: transparent !important;
+    color: #94a3b8 !important;
+    box-shadow: none !important;
+  }
+}
+
+/*
+ * iOS dá zoom automático ao focar um campo com fonte menor que 16px, o que
+ * "quebra" o layout no meio do preenchimento. No celular, os campos de
+ * digitação passam a ter 16px. Selects, datas e checkboxes ficam de fora
+ * porque não abrem o teclado.
+ */
+@media (max-width: 767px) {
+  input[type="text"],
+  input[type="email"],
+  input[type="password"],
+  input[type="number"],
+  input[type="search"],
+  input[type="tel"],
+  input[type="url"],
+  input:not([type]),
+  textarea {
+    font-size: 16px;
+  }
+}
