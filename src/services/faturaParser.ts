@@ -160,9 +160,10 @@ export function monthLabel(referenceMonth?: string): string {
   return `${MONTH_NAMES[month - 1]}/${year}`;
 }
 
-function detectBank(text: string): 'btg' | 'c6' | 'nubank' {
+function detectBank(text: string): 'btg' | 'c6' | 'nubank' | 'mercadopago' {
   if (/BANCO C6/i.test(text) || /C6\s*(Bank|Carbon)/i.test(text)) return 'c6';
   if (/Nubank/i.test(text)) return 'nubank';
+  if (/mercado pago/i.test(text) || /cartão crédito mercado pago/i.test(text)) return 'mercadopago';
   return 'btg';
 }
 
@@ -262,6 +263,45 @@ function parseHeaderC6(text: string): Omit<ParsedFatura, 'transactions' | 'warni
   if (anuidade) fees.push(parseBrl(anuidade[1]));
   if (iof) fees.push(parseBrl(iof[1]));
   if (fees.length) info.totals.fees = fees.reduce((a, b) => a + b, 0);
+
+  return info;
+}
+
+function parseHeaderMercadoPago(text: string): Omit<ParsedFatura, 'transactions' | 'warnings' | 'bankName'> & { bankName: string } {
+  const info: any = { bankName: 'Mercado Pago', totals: {} };
+
+  // "Vence em \n 14/04/2026" ou "Vencimento: 14/04/2026"
+  const vencMatch = text.match(/(?:Vence em|Vencimento:)\s*(\d{2})\/(\d{2})\/(\d{4})/i);
+  if (vencMatch) {
+    const day = Number(vencMatch[1]);
+    const month = Number(vencMatch[2]);
+    const year = Number(vencMatch[3]);
+    info.invoiceDueDate = isoDate(day, month, year);
+    info.referenceMonth = `${year}-${String(month).padStart(2, '0')}`;
+  } else {
+    // "Essa é sua fatura de abril"
+    const mesMatch = text.match(/fatura de\s+([A-Za-zçÇãÃéÉêÊ]+)/i);
+    if (mesMatch) {
+      const month = MONTH_NAMES.findIndex(n => normalize(n) === normalize(mesMatch[1])) + 1;
+      if (month > 0) {
+        const yearMatch = text.match(/\b(20\d{2})\b/);
+        const year = yearMatch ? Number(yearMatch[1]) : new Date().getFullYear();
+        info.referenceMonth = `${year}-${String(month).padStart(2, '0')}`;
+      }
+    }
+  }
+
+  // "Consumos de 10/03 a 09/04"
+  const periodoMatch = text.match(/consumos de\s*(\d{2})\/(\d{2})\s+a\s+(\d{2})\/(\d{2})/i);
+  if (periodoMatch && info.referenceMonth) {
+    const year = Number(info.referenceMonth.slice(0, 4));
+    info.statementPeriodStart = isoDate(Number(periodoMatch[1]), Number(periodoMatch[2]), year);
+    info.statementPeriodEnd = isoDate(Number(periodoMatch[3]), Number(periodoMatch[4]), year);
+  }
+
+  // "Total a pagar \n R$ 523,30" ou "Total R$ 523,30"
+  const totalMatch = text.match(/Total a pagar\s*R\$\s*([\d.]+,\d{2})/i) || text.match(/Consumos de \d{2}\/\d{2} a \d{2}\/\d{2}\s*R\$\s*([\d.]+,\d{2})/i);
+  if (totalMatch) info.totals.total = parseBrl(totalMatch[1]);
 
   return info;
 }
@@ -787,6 +827,7 @@ export function parseFatura(pages: string[][]): ParsedFatura {
   const header =
     bank === 'c6' ? parseHeaderC6(text) :
     bank === 'nubank' ? parseHeaderNubank(text) :
+    bank === 'mercadopago' ? parseHeaderMercadoPago(text) :
     parseHeaderBTG(text);
   const fatura: ParsedFatura = {
     ...header,
@@ -797,6 +838,7 @@ export function parseFatura(pages: string[][]): ParsedFatura {
   fatura.transactions =
     bank === 'c6' ? parseTransactionsC6(pages, fatura) :
     bank === 'nubank' ? parseTransactionsNubank(pages, fatura) :
+    bank === 'mercadopago' ? parseTransactionsMercadoPago(pages, fatura) :
     parseTransactionsBTG(pages, fatura);
 
   const pairs = markCompensated(fatura.transactions);
@@ -852,6 +894,74 @@ export function parseFatura(pages: string[][]): ParsedFatura {
   }
 
   return fatura;
+}
+
+/**
+ * Parser específico para faturas do Mercado Pago (cartão Visa).
+ *
+ * Formato típico:
+ *   Data Movimentações Valor em R$
+ *   13/03 MERCADOLIVRE*MERCADOLI R$ 413,99
+ *   18/03 MERCADOLIVRE*HERINGSTOREM R$ 109,31
+ */
+function parseTransactionsMercadoPago(pages: string[][], info: ParsedFatura): ParsedTransaction[] {
+  const refYear = info.referenceMonth ? Number(info.referenceMonth.slice(0, 4)) : new Date().getFullYear();
+  const refMonth = info.referenceMonth ? Number(info.referenceMonth.slice(5, 7)) : new Date().getMonth() + 1;
+
+  const transactions: ParsedTransaction[] = [];
+  let inDetails = false;
+
+  const MP_DATE_RE = /^(\d{2})\/(\d{2})\s+(.+?)\s+R\$\s*([\d.]+,\d{2})\s*$/;
+
+  for (const page of pages) {
+    for (const raw of page) {
+      const line = raw.trim();
+      if (!line) continue;
+
+      // Entrada na seção "Detalhes de consumo"
+      if (/Detalhes de consumo/i.test(line)) {
+        inDetails = true;
+        continue;
+      }
+
+      // Saída da seção (resumo, parcelamento, etc.)
+      if (/Resumo da fatura/i.test(line) || /Parcele a fatura/i.test(line) || /Informações complementares/i.test(line)) {
+        inDetails = false;
+        continue;
+      }
+
+      if (!inDetails) continue;
+
+      const m = MP_DATE_RE.exec(line);
+      if (!m) continue;
+
+      const day = Number(m[1]);
+      const month = Number(m[2]);
+      const description = m[3].replace(/\s+/g, ' ').trim();
+      const amount = parseBrl(m[4]);
+
+      // Ignora linha "Total"
+      if (/^total$/i.test(description)) continue;
+      if (!description) continue;
+
+      const guess = guessCategory(description);
+      const year = month > refMonth ? refYear - 1 : refYear;
+
+      transactions.push({
+        date: isoDate(day, month, year),
+        description,
+        amount: Math.round(amount * 100) / 100,
+        currency: 'BRL',
+        type: 'purchase',
+        section: 'compras',
+        category: guess.category,
+        categoryConfident: guess.confident,
+        compensated: false,
+      });
+    }
+  }
+
+  return transactions;
 }
 
 export function installmentDueLabel(
