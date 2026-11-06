@@ -1,4 +1,4 @@
-const CACHE_NAME = 'to-de-olho-v13';
+const CACHE_NAME = 'to-de-olho-v14';
 const APP_ICON = 'https://i.postimg.cc/FsxNpV4m/Gemini-Generated-Image-h73zf3h73zf3h73z-(1).png';
 // O Android desenha o ícone da barra de status a partir do `badge`, que precisa
 // ser branco sobre transparente (imagem colorida vira um borrão cinza).
@@ -53,8 +53,37 @@ self.addEventListener('fetch', (event) => {
 
 // Clique na notificação: foca o app (ou abre) e leva para a tela inicial.
 self.addEventListener('notificationclick', (event) => {
+  const data = event.notification.data || {};
+  const targetUrl = data.url || DEFAULT_URL;
+
+  // "Lembrar mais tarde": reagenda no servidor e confirma para o usuário.
+  if (event.action === 'snooze' && data.snoozeUrl) {
+    event.notification.close();
+    event.waitUntil(
+      (async () => {
+        try {
+          const response = await fetch(data.snoozeUrl, { method: 'POST' });
+          if (!response.ok) throw new Error(`status ${response.status}`);
+          await self.registration.showNotification('Vidi', {
+            body: 'Tudo bem! Vou te lembrar daqui a pouco.',
+            icon: APP_ICON,
+            badge: BADGE_ICON,
+            tag: 'vidi-snooze',
+          });
+        } catch (error) {
+          await self.registration.showNotification('Vidi', {
+            body: 'Não consegui reagendar agora. Abra o app para ver as contas.',
+            icon: APP_ICON,
+            badge: BADGE_ICON,
+            tag: 'vidi-snooze-error',
+          });
+        }
+      })()
+    );
+    return;
+  }
+
   event.notification.close();
-  const targetUrl = event.notification.data?.url || DEFAULT_URL;
 
   event.waitUntil(
     (async () => {
@@ -112,6 +141,11 @@ self.addEventListener('push', (event) => {
       ...(data.data || {}),
     },
   };
+
+  // Botões de ação (Android/Chrome). No iOS o Safari ignora e mostra só o toque.
+  if (Array.isArray(data.actions) && data.actions.length) {
+    options.actions = data.actions;
+  }
 
   event.waitUntil(self.registration.showNotification(title, options));
 });

@@ -13,6 +13,7 @@
  */
 
 import process from 'node:process';
+import { createHmac } from 'node:crypto';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { cert, getApps, initializeApp } from 'firebase-admin/app';
 import { getFirestore, Timestamp } from 'firebase-admin/firestore';
@@ -25,6 +26,8 @@ const TZ = 'America/Sao_Paulo';
 const DEFAULT_DB_ID = 'ai-studio-8f364394-09b6-4d90-aa4f-30e9ff874962';
 const APP_ICON = 'https://i.postimg.cc/FsxNpV4m/Gemini-Generated-Image-h73zf3h73zf3h73z-(1).png';
 const BADGE_ICON = '/badge-96.png';
+const SNOOZE_MINUTES = 60;
+const SNOOZE_TOKEN_TTL_MS = 48 * 60 * 60 * 1000;
 
 interface StoredSubscription {
   endpoint: string;
@@ -74,7 +77,7 @@ function isTransfer(data: Record<string, unknown>, transferGroups: Set<string>):
   return Boolean(groupId && transferGroups.has(groupId));
 }
 
-function getDb() {
+function getDb(): Firestore {
   const raw = process.env.FIREBASE_SERVICE_ACCOUNT;
   if (!raw) throw new Error('missing-service-account');
   const serviceAccount = JSON.parse(raw);
@@ -85,6 +88,24 @@ function getDb() {
     });
   }
   return getFirestore(getApps()[0], process.env.FIRESTORE_DATABASE_ID || DEFAULT_DB_ID);
+}
+
+/** Assinatura do link de "lembrar mais tarde" (evita reagendar conta alheia). */
+function signSnooze(uid: string, exp: number): string {
+  return createHmac('sha256', process.env.REMINDER_CRON_SECRET || '')
+    .update(`${uid}.${exp}`)
+    .digest('base64url');
+}
+
+function buildSnoozeUrl(origin: string, uid: string, minutes: number = SNOOZE_MINUTES): string {
+  const exp = Date.now() + SNOOZE_TOKEN_TTL_MS;
+  const params = new URLSearchParams({
+    uid,
+    exp: String(exp),
+    minutes: String(minutes),
+    sig: signSnooze(uid, exp),
+  });
+  return `${origin}/api/snooze?${params.toString()}`;
 }
 
 function isAuthorized(req: VercelRequest): boolean {
@@ -250,6 +271,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const isTest = req.query.test === '1';
   const isDry = req.query.dry === '1';
 
+  // Origem usada nos links da notificação (preview ou produção, sem hardcode).
+  const forwardedProto = req.headers['x-forwarded-proto'];
+  const forwardedHost = req.headers['x-forwarded-host'];
+  const protocol = (Array.isArray(forwardedProto) ? forwardedProto[0] : forwardedProto) || 'https';
+  const host =
+    (Array.isArray(forwardedHost) ? forwardedHost[0] : forwardedHost) ||
+    req.headers.host ||
+    'financas-app-google.vercel.app';
+  const origin = `${protocol}://${host}`;
+
   // Modo de teste: envia um push imediato para um usuário específico.
   if (isTest && testUid) {
     const userRef = db.collection('users').doc(testUid);
@@ -268,6 +299,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       tag: 'vidi-test',
       icon: APP_ICON,
       badge: BADGE_ICON,
+      actions: [
+        { action: 'snooze', title: 'Lembrar em 1h' },
+        { action: 'open', title: 'Abrir o Vidi' },
+      ],
+      data: { url: '/', snoozeUrl: buildSnoozeUrl(origin, testUid) },
     });
 
     const result = await sendToUser(subscriptions, payload, userRef);
@@ -398,7 +434,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       summary.skipped += 1;
       continue;
     }
-    if (data.lastPushDate === today) {
+
+    // "Lembrar mais tarde": enquanto o horário escolhido não chega, não envia.
+    // Quando chega, o envio é liberado mesmo que já tenha havido push hoje.
+    const snoozeUntil = toDate(data.snoozeUntil);
+    const snoozeActive = Boolean(snoozeUntil && snoozeUntil.getTime() > now.getTime());
+    if (snoozeActive) {
+      summary.skipped += 1;
+      continue;
+    }
+    const snoozeDue = Boolean(snoozeUntil);
+    if (data.lastPushDate === today && !snoozeDue) {
       summary.skipped += 1;
       continue;
     }
@@ -456,7 +502,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       tag: `vidi-bills-${today}`,
       icon: APP_ICON,
       badge: BADGE_ICON,
-      data: { type: 'bills', date: today },
+      actions: [
+        { action: 'snooze', title: 'Lembrar em 1h' },
+        { action: 'open', title: 'Abrir o Vidi' },
+      ],
+      data: { type: 'bills', date: today, url: '/', snoozeUrl: buildSnoozeUrl(origin, userDoc.id) },
     });
 
     if (isDry) {
@@ -484,7 +534,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (result.sent > 0) {
       summary.notified += 1;
-      await userDoc.ref.update({ lastPushDate: today, lastPushAt: Timestamp.now() });
+      await userDoc.ref.update({
+        lastPushDate: today,
+        lastPushAt: Timestamp.now(),
+        snoozeUntil: null,
+      });
     }
   }
 
