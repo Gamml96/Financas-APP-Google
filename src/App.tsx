@@ -2384,8 +2384,8 @@ function AppContent() {
                   </div>
                 </div>
 
-                {/* Secondary Filters Group */}
-                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+                {/* Secondary Filters Group (desktop only — no mobile o bloco recolhível abaixo substitui) */}
+                <div className="hidden sm:flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
                   {/* Quick Filter */}
                   <div className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm min-w-[160px] h-11">
                     <Calendar className="w-4 h-4 text-indigo-500 shrink-0" />
