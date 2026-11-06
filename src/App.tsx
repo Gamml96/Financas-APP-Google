@@ -5,6 +5,12 @@
 
 import React, { useState, useEffect, useMemo, Component, useRef } from 'react';
 import { normalize as normalizeText } from './services/faturaParser';
+import {
+  enablePush,
+  disablePush,
+  syncPush,
+  type PushStatus,
+} from './services/pushNotifications';
 import { 
   auth, 
   db, 
@@ -621,6 +627,8 @@ function AppContent() {
   const [selectedAccountId, setSelectedAccountId] = useState<string>('all');
   const [filtersCollapsed, setFiltersCollapsed] = useState(true);
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
+  const [pushStatus, setPushStatus] = useState<PushStatus>('loading');
+  const [pushBusy, setPushBusy] = useState(false);
   const [isOffline, setIsOffline] = useState(() => typeof navigator !== 'undefined' ? !navigator.onLine : false);
   const [toast, setToast] = useState<{
     message: string;
@@ -756,77 +764,89 @@ function AppContent() {
     }
   }, []);
 
+  // Sincroniza a assinatura de push (notificações com o app fechado).
+  // Só assina automaticamente se a permissão já tiver sido concedida.
+  useEffect(() => {
+    if (!user || !isAuthReady) return;
+    let cancelled = false;
+    syncPush(user.uid)
+      .then((status) => {
+        if (cancelled) return;
+        setPushStatus(status);
+        if (status === 'enabled') setNotificationsEnabled(true);
+      })
+      .catch(() => {
+        if (!cancelled) setPushStatus('error');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.uid, isAuthReady]);
+
+  // O navegador pode renovar a assinatura; nesse caso salvamos de novo.
+  useEffect(() => {
+    if (!('serviceWorker' in navigator) || !user) return;
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'PUSH_SUBSCRIPTION_CHANGED') {
+        syncPush(user.uid).then(setPushStatus).catch(() => {});
+      }
+    };
+    navigator.serviceWorker.addEventListener('message', handleMessage);
+    return () => navigator.serviceWorker.removeEventListener('message', handleMessage);
+  }, [user?.uid]);
+
   const requestNotificationPermission = async () => {
-    console.log("Solicitando permissão de notificação...");
-    
-    if (!("Notification" in window)) {
-      setToast({ message: "Seu navegador não suporta notificações nativas.", type: 'error' });
-      return;
-    }
-
-    setToast({ message: "Solicitando permissão...", type: 'info' });
-
+    if (!user) return;
+    setPushBusy(true);
     try {
-      if (Notification.permission === "denied") {
-        setToast({ 
-          message: "As notificações foram bloqueadas. Por favor, habilite-as nas configurações do seu navegador.", 
-          type: 'error' 
-        });
-        return;
-      }
+      const result = await enablePush(user.uid);
+      setPushStatus(result.status);
 
-      // Handle both promise and callback versions of requestPermission
-      let permission: NotificationPermission;
-      try {
-        permission = await Notification.requestPermission();
-      } catch (e) {
-        // Fallback for older browsers
-        permission = await new Promise((resolve) => {
-          Notification.requestPermission((p) => resolve(p));
-        });
-      }
+      if (result.status === 'enabled') {
+        setNotificationsEnabled(true);
+        setToast({ message: result.message, type: 'success' });
 
-      setNotificationsEnabled(permission === "granted");
-
-      if (permission === "granted") {
-        setToast({ message: "Notificações ativadas com sucesso!", type: 'success' });
-        
-        // Try to use Service Worker for the test notification
-        if ("serviceWorker" in navigator) {
-          navigator.serviceWorker.ready.then(registration => {
-            registration.showNotification("Vidi", {
-              body: "As notificações de contas a vencer estão ativas.",
-              icon: APP_ICON,
-              badge: APP_ICON
-            });
-          }).catch(() => {
-            // Fallback to standard notification
-            new Notification("Vidi", {
-              body: "As notificações de contas a vencer estão ativas.",
-              icon: APP_ICON
-            });
-          });
-        } else {
-          new Notification("Vidi", {
-            body: "As notificações de contas a vencer estão ativas.",
-            icon: APP_ICON
-          });
+        // Notificação de teste local para confirmar que a permissão funciona.
+        try {
+          const registration = await navigator.serviceWorker.ready;
+          await registration.showNotification('Vidi', {
+            body: 'Notificações ativadas! Você será avisado mesmo com o app fechado.',
+            icon: APP_ICON,
+            badge: APP_ICON,
+            tag: 'vidi-welcome',
+          } as any);
+        } catch (e) {
+          console.warn('Não foi possível exibir a notificação de teste:', e);
         }
       } else {
-        setToast({ message: "Permissão de notificação negada.", type: 'info' });
+        setToast({
+          message: result.message,
+          type: result.status === 'denied' || result.status === 'unsupported' || result.status === 'error'
+            ? 'error'
+            : 'info',
+        });
       }
-    } catch (err) {
-      console.error("Erro ao solicitar permissão:", err);
-      setToast({ 
-        message: "Não foi possível ativar as notificações. Tente abrir o app em uma nova aba.", 
-        type: 'error' 
-      });
+    } finally {
+      setPushBusy(false);
     }
   };
 
-  // Check for upcoming bills
+  const handleDisablePush = async () => {
+    if (!user) return;
+    setPushBusy(true);
+    try {
+      const result = await disablePush(user.uid);
+      setPushStatus(result.status);
+      setToast({ message: result.message, type: 'info' });
+    } finally {
+      setPushBusy(false);
+    }
+  };
+
+  // Check for upcoming bills (fallback local; quando o push do servidor está
+  // ativo, ele é quem envia — evitando notificação duplicada).
   useEffect(() => {
-    if (!notificationsEnabled || transactions.length === 0 || !user) return;
+    if (!notificationsEnabled || pushStatus === 'enabled' || transactions.length === 0 || !user) return;
 
     const checkUpcomingBills = () => {
       const now = new Date();
@@ -898,7 +918,7 @@ function AppContent() {
     // Check every 1 hour
     const interval = setInterval(checkUpcomingBills, 3600000);
     return () => clearInterval(interval);
-  }, [notificationsEnabled, transactions, user, userProfile]);
+  }, [notificationsEnabled, pushStatus, transactions, user, userProfile]);
 
   // Auth Listener
   useEffect(() => {
@@ -2167,20 +2187,21 @@ function AppContent() {
 
               <button 
                 onClick={() => {
-                  if (notificationsEnabled) {
+                  if (pushStatus === 'enabled') {
                     setShowNotificationCenter(true);
                   } else {
                     requestNotificationPermission();
                   }
                 }}
+                disabled={pushBusy}
                 className={cn(
-                  "p-2 rounded-full transition-colors relative",
-                  notificationsEnabled ? "text-indigo-600 bg-indigo-50 dark:bg-indigo-900/20" : "text-slate-400 hover:text-indigo-600 hover:bg-slate-50 dark:hover:bg-slate-800"
+                  "p-2 rounded-full transition-colors relative disabled:opacity-50",
+                  pushStatus === 'enabled' ? "text-indigo-600 bg-indigo-50 dark:bg-indigo-900/20" : "text-slate-400 hover:text-indigo-600 hover:bg-slate-50 dark:hover:bg-slate-800"
                 )}
-                title={notificationsEnabled ? "Ver Notificações" : "Ativar Notificações"}
+                title={pushStatus === 'enabled' ? "Ver Notificações" : "Ativar Notificações"}
               >
-                {notificationsEnabled ? <Bell className="w-5 h-5" /> : <BellOff className="w-5 h-5" />}
-                {notificationsEnabled && transactions.some(tx => {
+                {pushStatus === 'enabled' ? <Bell className="w-5 h-5" /> : <BellOff className="w-5 h-5" />}
+                {pushStatus === 'enabled' && transactions.some(tx => {
                   if (tx.type !== 'expense' || !tx.dueDate) return false;
                   const dueDate = tx.dueDate instanceof Timestamp ? tx.dueDate.toDate() : new Date(tx.dueDate);
                   const now = new Date();
@@ -3715,6 +3736,10 @@ function AppContent() {
                   userProfile={userProfile}
                   onUpdateProfile={handleUpdateProfile}
                   onResetData={() => setShowResetModal(true)}
+                  pushStatus={pushStatus}
+                  pushBusy={pushBusy}
+                  onEnablePush={requestNotificationPermission}
+                  onDisablePush={handleDisablePush}
                 />
               </div>
             </motion.div>
@@ -3863,7 +3888,7 @@ function AccessDeniedView({ onLogout, userEmail }: { onLogout: () => void, userE
   );
 }
 
-function SettingsManager({ userProfile, onUpdateProfile, onResetData }: { userProfile: any, onUpdateProfile: (data: any) => Promise<void>, onResetData: () => void }) {
+function SettingsManager({ userProfile, onUpdateProfile, onResetData, pushStatus, pushBusy, onEnablePush, onDisablePush }: { userProfile: any, onUpdateProfile: (data: any) => Promise<void>, onResetData: () => void, pushStatus: PushStatus, pushBusy: boolean, onEnablePush: () => void | Promise<void>, onDisablePush: () => void | Promise<void> }) {
   const [name, setName] = useState(userProfile?.displayName || '');
   const [reminderDays, setReminderDays] = useState(userProfile?.reminderDaysBefore || 3);
   const [reminderTime, setReminderTime] = useState(userProfile?.reminderTime || '09:00');
@@ -3939,6 +3964,75 @@ function SettingsManager({ userProfile, onUpdateProfile, onResetData }: { userPr
         <div className="flex items-center gap-2 mb-2">
           <Bell className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
           <h3 className="text-sm font-semibold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider">Lembretes de Contas</h3>
+        </div>
+
+        {/* Push real: funciona com o app fechado */}
+        <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-3 shadow-sm">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-sm font-bold text-slate-900 dark:text-slate-100">Notificações no celular</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                Receba os lembretes mesmo com o Vidi fechado.
+              </p>
+            </div>
+            <span className={cn(
+              "text-[10px] font-bold px-2 py-1 rounded-full uppercase tracking-wider whitespace-nowrap",
+              pushStatus === 'enabled' ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400" :
+              pushStatus === 'denied' || pushStatus === 'error' ? "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400" :
+              "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400"
+            )}>
+              {pushStatus === 'enabled' ? 'Ativo' :
+               pushStatus === 'loading' ? '...' :
+               pushStatus === 'denied' ? 'Bloqueado' :
+               pushStatus === 'ios-needs-install' ? 'Instalar app' :
+               pushStatus === 'unsupported' ? 'Sem suporte' :
+               pushStatus === 'error' ? 'Erro' : 'Desativado'}
+            </span>
+          </div>
+
+          {pushStatus === 'ios-needs-install' && (
+            <div className="text-xs text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-900/40 rounded-xl p-3 leading-relaxed">
+              No iPhone, toque em <strong>Compartilhar</strong> → <strong>Adicionar à Tela de Início</strong>.
+              Depois abra o Vidi pelo ícone instalado e ative as notificações aqui.
+            </div>
+          )}
+
+          {pushStatus === 'unsupported' && (
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Este navegador não suporta notificações push. No Android use o Chrome; no iPhone use o app instalado.
+            </p>
+          )}
+
+          {pushStatus === 'denied' && (
+            <p className="text-xs text-rose-600 dark:text-rose-400">
+              A permissão está bloqueada. Abra as configurações do navegador/app e permita notificações para o Vidi.
+            </p>
+          )}
+
+          {pushStatus !== 'enabled' && pushStatus !== 'unsupported' && pushStatus !== 'ios-needs-install' && (
+            <button
+              onClick={() => void onEnablePush()}
+              disabled={pushBusy}
+              className="w-full bg-emerald-600 text-white py-2.5 rounded-xl text-sm font-bold hover:bg-emerald-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            >
+              <Bell className="w-4 h-4" />
+              {pushBusy ? 'Ativando...' : 'Ativar notificações no celular'}
+            </button>
+          )}
+
+          {pushStatus === 'enabled' && (
+            <button
+              onClick={() => void onDisablePush()}
+              disabled={pushBusy}
+              className="w-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 py-2.5 rounded-xl text-sm font-semibold hover:bg-slate-200 dark:hover:bg-slate-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {pushBusy ? 'Desativando...' : 'Desativar neste dispositivo'}
+            </button>
+          )}
+
+          <p className="text-[10px] text-slate-400 dark:text-slate-500 text-center">
+            O envio é feito pelo servidor, então funciona com o app fechado (Android e iPhone).
+          </p>
         </div>
         
         <div className="bg-slate-50 dark:bg-slate-800/50 p-5 rounded-2xl border border-slate-100 dark:border-slate-800 space-y-5">

@@ -1,5 +1,6 @@
-const CACHE_NAME = 'to-de-olho-v11';
+const CACHE_NAME = 'to-de-olho-v12';
 const APP_ICON = 'https://i.postimg.cc/MGFSqd7F/1776539933739.png';
+const DEFAULT_URL = '/';
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();
@@ -47,59 +48,93 @@ self.addEventListener('fetch', (event) => {
   );
 });
 
-// Manipulação de cliques em notificações
+// Clique na notificação: foca o app (ou abre) e leva para a tela inicial.
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  
+  const targetUrl = event.notification.data?.url || DEFAULT_URL;
+
   event.waitUntil(
-    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
-      // Se já houver uma aba aberta, foca nela
+    (async () => {
+      const clientList = await self.clients.matchAll({
+        type: 'window',
+        includeUncontrolled: true,
+      });
+
       for (const client of clientList) {
-        if (client.url === '/' && 'focus' in client) {
-          return client.focus();
+        if ('focus' in client) {
+          try {
+            await client.focus();
+          } catch {
+            /* ignore */
+          }
+          if ('navigate' in client) {
+            try {
+              await client.navigate(targetUrl);
+            } catch {
+              /* ignore */
+            }
+          }
+          return;
         }
       }
-      // Se não, abre uma nova
+
       if (self.clients.openWindow) {
-        return self.clients.openWindow('/');
+        return self.clients.openWindow(targetUrl);
       }
-    })
+      return undefined;
+    })()
   );
 });
 
-// Suporte para Push Notifications (Backend)
+// Push recebido do servidor (funciona com o app fechado).
 self.addEventListener('push', (event) => {
-  const data = event.data ? event.data.json() : { title: 'Tô de Olho', body: 'Lembrete de suas finanças.' };
-  
+  let data = {};
+  try {
+    data = event.data ? event.data.json() : {};
+  } catch {
+    data = { body: event.data ? event.data.text() : '' };
+  }
+
+  const title = data.title || 'Vidi';
   const options = {
-    body: data.body,
-    icon: APP_ICON,
-    badge: APP_ICON,
-    vibrate: [100, 50, 100],
+    body: data.body || 'Lembrete de suas finanças.',
+    icon: data.icon || APP_ICON,
+    badge: data.badge || APP_ICON,
+    vibrate: data.vibrate || [100, 50, 100],
+    tag: data.tag || 'vidi-reminder',
+    renotify: true,
+    requireInteraction: false,
     data: {
-      dateOfArrival: Date.now(),
-      primaryKey: '1'
-    }
+      url: data.url || DEFAULT_URL,
+      ...(data.data || {}),
+    },
   };
 
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+// Quando o navegador renova/invalida a assinatura, avisa o app para reenviar.
+self.addEventListener('pushsubscriptionchange', (event) => {
   event.waitUntil(
-    self.registration.showNotification(data.title, options)
+    self.clients
+      .matchAll({ includeUncontrolled: true, type: 'window' })
+      .then((clientList) => {
+        clientList.forEach((client) => {
+          client.postMessage({ type: 'PUSH_SUBSCRIPTION_CHANGED' });
+        });
+      })
   );
 });
 
-// Sincronização em segundo plano (Background Sync)
+// Sincronização em segundo plano (mantido para compatibilidade).
 self.addEventListener('sync', (event) => {
   if (event.tag === 'sync-transactions') {
     console.log('Sincronizando transações em segundo plano...');
-    // Aqui poderíamos disparar uma verificação de dados se necessário
   }
 });
 
-// Periodic Background Sync (Wakes up occasionally to check for notifications)
 self.addEventListener('periodicsync', (event) => {
   if (event.tag === 'check-bills') {
     console.log('Verificação periódica de contas...');
-    // Disparar uma notificação se houver algo próximo
-    // Nota: Requer que o app esteja "instalado" e tenha permissão
   }
 });

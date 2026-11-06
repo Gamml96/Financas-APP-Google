@@ -1,0 +1,23 @@
+name: Vidi - lembretes push
+
+# A Vercel Hobby só permite cron 1x por dia, então o agendamento horário
+# fica no GitHub Actions. A função verifica o horário configurado por usuário
+# e envia no máximo uma notificação por dia (campo lastPushDate).
+on:
+  schedule:
+    - cron: '0 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: vidi-reminders
+  cancel-in-progress: false
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Chamar API de lembretes
+        run: |
+          curl -fsS -X POST "https://financas-app-google.vercel.app/api/send-reminders" \
+            -H "Authorization: Bearer ${{ secrets.REMINDER_CRON_SECRET }}" \
+            -H "Content-Type: application/json"
