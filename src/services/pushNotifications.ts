@@ -98,6 +98,9 @@ async function saveSubscription(userId: string, subscription: PushSubscription):
         auth: json.keys.auth,
       },
       userAgent: navigator.userAgent,
+      // A assinatura é vinculada à origem (domínio) que a criou. Guardamos para
+      // conseguir limpar assinaturas antigas de outro domínio (ex.: preview).
+      origin: typeof window !== 'undefined' ? window.location.origin : '',
       updatedAt: Timestamp.now(),
     },
     pushEnabled: true,
