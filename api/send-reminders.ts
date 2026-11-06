@@ -209,6 +209,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const testUid = typeof req.query.uid === 'string' ? req.query.uid : '';
   const isTest = req.query.test === '1';
+  const isDry = req.query.dry === '1';
 
   // Modo de teste: envia um push imediato para um usuário específico.
   if (isTest && testUid) {
@@ -275,6 +276,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     errors: 0,
     skipped: 0,
   };
+  const dryRun: Array<{ uid: string; title: string; body: string; devices: number }> = [];
 
   for (const userDoc of usersSnap.docs) {
     const data = userDoc.data();
@@ -329,6 +331,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       data: { type: 'bills', date: today },
     });
 
+    if (isDry) {
+      dryRun.push({ uid: userDoc.id, title, body, devices: subscriptions.length });
+      summary.notified += 1;
+      continue;
+    }
+
     const result = await sendToUser(subscriptions, payload, userDoc.ref);
     summary.sent += result.sent;
     summary.removed += result.removed;
@@ -340,5 +348,5 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
   }
 
-  return res.status(200).json({ ok: true, ...summary });
+  return res.status(200).json({ ok: true, ...summary, ...(isDry ? { dryRun } : {}) });
 }
