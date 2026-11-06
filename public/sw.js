@@ -1,5 +1,8 @@
-const CACHE_NAME = 'to-de-olho-v12';
-const APP_ICON = 'https://i.postimg.cc/MGFSqd7F/1776539933739.png';
+const CACHE_NAME = 'to-de-olho-v13';
+const APP_ICON = 'https://i.postimg.cc/FsxNpV4m/Gemini-Generated-Image-h73zf3h73zf3h73z-(1).png';
+// O Android desenha o ícone da barra de status a partir do `badge`, que precisa
+// ser branco sobre transparente (imagem colorida vira um borrão cinza).
+const BADGE_ICON = '/badge-96.png';
 const DEFAULT_URL = '/';
 
 self.addEventListener('install', (event) => {
@@ -99,7 +102,7 @@ self.addEventListener('push', (event) => {
   const options = {
     body: data.body || 'Lembrete de suas finanças.',
     icon: data.icon || APP_ICON,
-    badge: data.badge || APP_ICON,
+    badge: data.badge || BADGE_ICON,
     vibrate: data.vibrate || [100, 50, 100],
     tag: data.tag || 'vidi-reminder',
     renotify: true,

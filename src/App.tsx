@@ -812,7 +812,7 @@ function AppContent() {
           await registration.showNotification('Vidi', {
             body: 'Notificações ativadas! Você será avisado mesmo com o app fechado.',
             icon: APP_ICON,
-            badge: APP_ICON,
+            badge: '/badge-96.png',
             tag: 'vidi-welcome',
           } as any);
         } catch (e) {
@@ -896,7 +896,7 @@ function AppContent() {
             registration.showNotification(title, {
               body,
               icon: APP_ICON,
-              badge: APP_ICON,
+              badge: '/badge-96.png',
               vibrate: [200, 100, 200],
               tag: 'upcoming_bills_summary' // Consolidate into one notification slot
             } as any);
@@ -4091,7 +4091,7 @@ function SettingsManager({ userProfile, onUpdateProfile, onResetData, pushStatus
                     reg.showNotification("Teste de Notificação", {
                       body: "Seus alertas estão configurados corretamente!",
                       icon: APP_ICON,
-                      badge: APP_ICON,
+                      badge: '/badge-96.png',
                       vibrate: [100, 50, 100],
                     } as any);
                   });

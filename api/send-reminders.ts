@@ -23,6 +23,8 @@ export const config = { maxDuration: 60 };
 
 const TZ = 'America/Sao_Paulo';
 const DEFAULT_DB_ID = 'ai-studio-8f364394-09b6-4d90-aa4f-30e9ff874962';
+const APP_ICON = 'https://i.postimg.cc/FsxNpV4m/Gemini-Generated-Image-h73zf3h73zf3h73z-(1).png';
+const BADGE_ICON = '/badge-96.png';
 
 interface StoredSubscription {
   endpoint: string;
@@ -30,9 +32,46 @@ interface StoredSubscription {
 }
 
 interface Bill {
+  /**
+   * `invoice` = fatura de cartão (vários lançamentos com o mesmo vencimento
+   * contam como UMA cobrança); `bill` = conta avulsa (boleto, PIX, débito).
+   */
+  kind: 'invoice' | 'bill';
   description: string;
   amount: number;
   due: Date;
+  /** Quantos lançamentos compõem este item (só informativo). */
+  transactions: number;
+}
+
+function normalizeCategory(value: unknown): string {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+const TRANSFER_CATEGORIES = new Set([
+  'transferencia',
+  'transferencias',
+  'transferencia entre contas',
+  'transf',
+  'transfer',
+]);
+
+/**
+ * Transferências entre contas do próprio usuário (inclui pagamento de fatura)
+ * não são contas a pagar: o dinheiro não sai do patrimônio. No app elas são
+ * gravadas como um par despesa+receita com o mesmo `groupId`.
+ */
+function isTransfer(data: Record<string, unknown>, transferGroups: Set<string>): boolean {
+  if (data.type === 'transfer') return true;
+  if (typeof data.toAccountId === 'string' && data.toAccountId.trim()) return true;
+  if (TRANSFER_CATEGORIES.has(normalizeCategory(data.category))) return true;
+  const groupId = typeof data.groupId === 'string' ? data.groupId : '';
+  return Boolean(groupId && transferGroups.has(groupId));
 }
 
 function getDb() {
@@ -227,6 +266,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       body: 'Se você recebeu isso, as notificações com o app fechado estão funcionando!',
       url: '/',
       tag: 'vidi-test',
+      icon: APP_ICON,
+      badge: BADGE_ICON,
     });
 
     const result = await sendToUser(subscriptions, payload, userRef);
@@ -236,27 +277,88 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const now = new Date();
   const { date: today, hour, minute } = getZonedParts(now, TZ);
 
-  const [usersSnap, transactionsSnap] = await Promise.all([
+  const [usersSnap, transactionsSnap, accountsSnap] = await Promise.all([
     db.collection('users').get(),
     db.collection('transactions').get(),
+    db.collection('accounts').get(),
   ]);
 
-  // Agrupa as contas por usuário uma única vez.
-  const billsByUser = new Map<string, Bill[]>();
+  // Nome dos cartões/contas para montar "Fatura C6" etc.
+  const accountNames = new Map<string, string>();
+  for (const doc of accountsSnap.docs) {
+    const data = doc.data();
+    const name = typeof data.name === 'string' ? data.name.trim() : '';
+    if (name) accountNames.set(doc.id, name);
+  }
+
+  // Grupos que contêm despesa e receita são transferências (par de lançamentos).
+  const groupTypes = new Map<string, { expense: boolean; income: boolean }>();
+  for (const doc of transactionsSnap.docs) {
+    const data = doc.data();
+    const groupId = typeof data.groupId === 'string' ? data.groupId : '';
+    if (!groupId) continue;
+    const entry = groupTypes.get(groupId) || { expense: false, income: false };
+    if (data.type === 'expense') entry.expense = true;
+    if (data.type === 'income') entry.income = true;
+    groupTypes.set(groupId, entry);
+  }
+  const transferGroups = new Set<string>();
+  for (const [groupId, entry] of groupTypes) {
+    if (entry.expense && entry.income) transferGroups.add(groupId);
+  }
+
+  // Agrupa as cobranças por usuário uma única vez.
+  //
+  // Importante: ao importar uma fatura, cada compra vira um lançamento com o
+  // MESMO vencimento. Somar lançamento por lançamento faria "19 contas" para
+  // uma única fatura. Por isso, despesas no crédito são agrupadas por
+  // (cartão + data de vencimento) e contam como uma fatura.
+  const billsByUser = new Map<string, Map<string, Bill>>();
   for (const doc of transactionsSnap.docs) {
     const data = doc.data();
     if (data.type !== 'expense') continue;
+    if (isTransfer(data, transferGroups)) continue;
     const due = toDate(data.dueDate);
     if (!due) continue;
     const userId = typeof data.userId === 'string' ? data.userId : '';
     if (!userId) continue;
-    const list = billsByUser.get(userId) || [];
-    list.push({
-      description: String(data.description || data.category || 'Conta'),
-      amount: Number(data.amount) || 0,
-      due,
-    });
-    billsByUser.set(userId, list);
+
+    const amount = Number(data.amount) || 0;
+    const accountId = typeof data.accountId === 'string' ? data.accountId : '';
+    const isCredit = data.paymentType === 'credit' && Boolean(accountId);
+
+    let byKey = billsByUser.get(userId);
+    if (!byKey) {
+      byKey = new Map<string, Bill>();
+      billsByUser.set(userId, byKey);
+    }
+
+    if (isCredit) {
+      // Fatura: 1 item por cartão + vencimento.
+      const dueDay = getZonedParts(due, TZ).date;
+      const key = `invoice:${accountId}:${dueDay}`;
+      const existing = byKey.get(key);
+      if (existing) {
+        existing.amount += amount;
+        existing.transactions += 1;
+      } else {
+        byKey.set(key, {
+          kind: 'invoice',
+          description: `Fatura ${accountNames.get(accountId) || 'do cartão'}`,
+          amount,
+          due,
+          transactions: 1,
+        });
+      }
+    } else {
+      byKey.set(`bill:${doc.id}`, {
+        kind: 'bill',
+        description: String(data.description || data.category || 'Conta'),
+        amount,
+        due,
+        transactions: 1,
+      });
+    }
   }
 
   const currency = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -276,7 +378,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     errors: 0,
     skipped: 0,
   };
-  const dryRun: Array<{ uid: string; title: string; body: string; devices: number }> = [];
+  const dryRun: Array<{
+    uid: string;
+    title: string;
+    body: string;
+    devices: number;
+    items: Array<{ kind: string; description: string; amount: number; due: string; transactions: number }>;
+  }> = [];
 
   for (const userDoc of usersSnap.docs) {
     const data = userDoc.data();
@@ -301,7 +409,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const start = startOfZonedDay(today, TZ).getTime();
     const end = startOfZonedDay(addDays(today, reminderDays + 1), TZ).getTime();
 
-    const bills = (billsByUser.get(userDoc.id) || []).filter((bill) => {
+    const bills = [...(billsByUser.get(userDoc.id)?.values() || [])].filter((bill) => {
       const time = bill.due.getTime();
       return time >= start && time < end;
     });
@@ -313,26 +421,58 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     bills.sort((a, b) => a.due.getTime() - b.due.getTime());
     const total = bills.reduce((sum, bill) => sum + bill.amount, 0);
+    const invoiceCount = bills.filter((bill) => bill.kind === 'invoice').length;
+    const billCount = bills.length - invoiceCount;
 
-    const title =
-      bills.length === 1 ? 'Conta a vencer' : `${bills.length} contas a vencer`;
-    const body =
-      bills.length === 1
-        ? `${bills[0].description} — ${currency.format(bills[0].amount)} vence em ${shortDate.format(
-            bills[0].due
-          )}.`
-        : `Total de ${currency.format(total)} nos próximos ${reminderDays} dias.`;
+    let title: string;
+    let body: string;
+
+    if (bills.length === 1) {
+      const item = bills[0];
+      title = item.kind === 'invoice' ? 'Fatura do cartão a vencer' : 'Conta a vencer';
+      body = `${item.description} — ${currency.format(item.amount)} vence em ${shortDate.format(
+        item.due
+      )}.`;
+    } else {
+      title = `${bills.length} contas a vencer`;
+      const breakdown: string[] = [];
+      if (invoiceCount > 0) {
+        breakdown.push(`${invoiceCount} fatura${invoiceCount > 1 ? 's' : ''} de cartão`);
+      }
+      if (billCount > 0) {
+        breakdown.push(`${billCount} conta${billCount > 1 ? 's' : ''}`);
+      }
+      const window =
+        reminderDays <= 0
+          ? 'que vencem hoje'
+          : `nos próximos ${reminderDays} dia${reminderDays === 1 ? '' : 's'}`;
+      body = `Total de ${currency.format(total)} ${window} (${breakdown.join(' + ')}).`;
+    }
 
     const payload = JSON.stringify({
       title,
       body,
       url: '/',
       tag: `vidi-bills-${today}`,
+      icon: APP_ICON,
+      badge: BADGE_ICON,
       data: { type: 'bills', date: today },
     });
 
     if (isDry) {
-      dryRun.push({ uid: userDoc.id, title, body, devices: subscriptions.length });
+      dryRun.push({
+        uid: userDoc.id,
+        title,
+        body,
+        devices: subscriptions.length,
+        items: bills.map((bill) => ({
+          kind: bill.kind,
+          description: bill.description,
+          amount: bill.amount,
+          due: getZonedParts(bill.due, TZ).date,
+          transactions: bill.transactions,
+        })),
+      });
       summary.notified += 1;
       continue;
     }
