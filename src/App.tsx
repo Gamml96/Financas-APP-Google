@@ -11,6 +11,15 @@ import {
   syncPush,
   type PushStatus,
 } from './services/pushNotifications';
+import {
+  API_SCOPES,
+  DEFAULT_API_SCOPES,
+  createApiKey,
+  listApiKeys,
+  revokeApiKey,
+  type ApiKeySummary,
+  type CreatedApiKey,
+} from './services/apiKeys';
 import { 
   auth, 
   db, 
@@ -156,6 +165,9 @@ import {
   CloudRain,
   Upload,
   Loader2,
+  Copy,
+  Check,
+  Bot,
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -4112,6 +4124,14 @@ function SettingsManager({ userProfile, onUpdateProfile, onResetData, pushStatus
         </div>
       </div>
 
+      <div className="pt-6 border-t border-slate-100 dark:border-slate-800">
+        <div className="flex items-center gap-2 mb-2">
+          <Key className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+          <h3 className="text-sm font-semibold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider">API para bots</h3>
+        </div>
+        <ApiKeysManager />
+      </div>
+
       {isAdmin && (
         <div className="pt-6 border-t border-slate-100 dark:border-slate-800">
           <h3 className="text-sm font-semibold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider mb-4">Gerenciar Acessos</h3>
@@ -4144,6 +4164,235 @@ function SettingsManager({ userProfile, onUpdateProfile, onResetData, pushStatus
 
       <div className="pt-6 border-t border-slate-100 dark:border-slate-800 text-center">
         <p className="text-[10px] text-slate-400 dark:text-slate-500">Versão 1.2.0 • Tô de Olho</p>
+      </div>
+    </div>
+  );
+}
+
+function ApiKeysManager() {
+  const [keys, setKeys] = useState<ApiKeySummary[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [label, setLabel] = useState('');
+  const [scopes, setScopes] = useState<string[]>([...DEFAULT_API_SCOPES]);
+  const [created, setCreated] = useState<CreatedApiKey | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const load = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      setKeys(await listApiKeys());
+    } catch (err: any) {
+      setError(err?.message || 'Não foi possível carregar as chaves.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void load();
+  }, []);
+
+  const toggleScope = (id: string) => {
+    setScopes(prev => (prev.includes(id) ? prev.filter(s => s !== id) : [...prev, id]));
+  };
+
+  const handleCreate = async () => {
+    if (busy) return;
+    if (scopes.length === 0) {
+      setError('Escolha pelo menos um escopo.');
+      return;
+    }
+    setBusy(true);
+    setError('');
+    try {
+      const result = await createApiKey(label.trim() || 'Bot', scopes);
+      setCreated(result);
+      setLabel('');
+      await load();
+    } catch (err: any) {
+      setError(err?.message || 'Não foi possível criar a chave.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleRevoke = async (key: ApiKeySummary) => {
+    if (!window.confirm(`Revogar "${key.label || key.hint}"? O bot vai parar de funcionar imediatamente.`)) {
+      return;
+    }
+    setBusy(true);
+    setError('');
+    try {
+      await revokeApiKey(key.id);
+      if (created?.key.id === key.id) setCreated(null);
+      await load();
+    } catch (err: any) {
+      setError(err?.message || 'Não foi possível revogar a chave.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const copyToken = async () => {
+    if (!created) return;
+    try {
+      await navigator.clipboard.writeText(created.token);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      /* clipboard bloqueado */
+    }
+  };
+
+  const baseUrl = typeof window !== 'undefined'
+    ? `${window.location.origin}/api/v1`
+    : 'https://financas-app-google.vercel.app/api/v1';
+  const activeKeys = keys.filter(key => !key.revoked);
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-4 shadow-sm">
+        <div>
+          <p className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+            <Bot className="w-4 h-4 text-indigo-500" />
+            Chaves de acesso
+          </p>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
+            Permita que um bot ou automação crie lançamentos em seu nome. Cada chave tem escopos próprios e pode ser revogada a qualquer momento.
+          </p>
+        </div>
+
+        {loading ? (
+          <div className="flex items-center gap-2 text-xs text-slate-400">
+            <Loader2 className="w-3.5 h-3.5 animate-spin" /> Carregando chaves...
+          </div>
+        ) : activeKeys.length === 0 ? (
+          <p className="text-xs text-slate-400 dark:text-slate-500">Nenhuma chave ativa.</p>
+        ) : (
+          <div className="space-y-2">
+            {activeKeys.map(key => (
+              <div
+                key={key.id}
+                className="flex items-start justify-between gap-3 p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-100 dark:border-slate-800"
+              >
+                <div className="min-w-0">
+                  <p className="text-xs font-bold text-slate-900 dark:text-slate-100 truncate">{key.label || 'Sem nome'}</p>
+                  <p className="text-[10px] font-mono text-slate-500 dark:text-slate-400 truncate">{key.hint}</p>
+                  <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">
+                    {key.lastUsedAt
+                      ? `Último uso: ${new Date(key.lastUsedAt).toLocaleString('pt-BR')}`
+                      : 'Nunca usada'}
+                    {' • '}
+                    {key.scopes.length} escopo{key.scopes.length === 1 ? '' : 's'}
+                  </p>
+                </div>
+                <button
+                  onClick={() => void handleRevoke(key)}
+                  disabled={busy}
+                  className="text-rose-500 hover:text-rose-700 p-1 disabled:opacity-40"
+                  title="Revogar chave"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="pt-3 border-t border-slate-100 dark:border-slate-800 space-y-3">
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={label}
+              onChange={(e) => setLabel(e.target.value)}
+              placeholder="Nome da chave (ex.: Bot WhatsApp)"
+              maxLength={60}
+              className="flex-1 min-w-0 px-4 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-slate-900 dark:text-slate-100"
+              disabled={busy}
+            />
+            <button
+              onClick={() => void handleCreate()}
+              disabled={busy || scopes.length === 0}
+              className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-indigo-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed min-w-[80px] flex items-center justify-center gap-2"
+            >
+              {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Criar'}
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {API_SCOPES.map(scope => (
+              <label
+                key={scope.id}
+                className={cn(
+                  "flex items-start gap-2 p-2.5 rounded-xl border cursor-pointer transition-all",
+                  scopes.includes(scope.id)
+                    ? "border-indigo-200 dark:border-indigo-800 bg-indigo-50/60 dark:bg-indigo-900/20"
+                    : "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900"
+                )}
+              >
+                <input
+                  type="checkbox"
+                  checked={scopes.includes(scope.id)}
+                  onChange={() => toggleScope(scope.id)}
+                  className="mt-0.5 accent-indigo-600"
+                />
+                <span className="min-w-0">
+                  <span className="block text-[11px] font-semibold text-slate-700 dark:text-slate-200">{scope.label}</span>
+                  <span className="block text-[10px] text-slate-400 dark:text-slate-500 leading-snug">{scope.description}</span>
+                </span>
+              </label>
+            ))}
+          </div>
+        </div>
+
+        {error && (
+          <p className="text-xs text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-900/20 border border-rose-100 dark:border-rose-900/40 rounded-xl p-2.5">
+            {error}
+          </p>
+        )}
+
+        {created && (
+          <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-900/40 rounded-xl p-3 space-y-2">
+            <p className="text-xs font-bold text-amber-900 dark:text-amber-200">
+              Copie agora — a chave não será exibida novamente
+            </p>
+            <div className="flex gap-2">
+              <code className="flex-1 min-w-0 text-[10px] font-mono bg-white dark:bg-slate-900 p-2 rounded-lg border border-amber-200 dark:border-amber-900/40 break-all text-slate-700 dark:text-slate-200">
+                {created.token}
+              </code>
+              <button
+                onClick={() => void copyToken()}
+                className="px-3 rounded-lg bg-amber-600 text-white hover:bg-amber-700 transition-all flex items-center justify-center"
+                title="Copiar chave"
+              >
+                {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+              </button>
+            </div>
+            <p className="text-[10px] text-amber-800/80 dark:text-amber-300/80">
+              Envie no header <code className="font-mono">Authorization: Bearer &lt;chave&gt;</code>.
+            </p>
+          </div>
+        )}
+
+        <details className="text-[11px]">
+          <summary className="cursor-pointer text-slate-500 dark:text-slate-400 font-semibold select-none">
+            Exemplo de uso
+          </summary>
+          <pre className="mt-2 p-3 bg-slate-900 dark:bg-black text-slate-100 rounded-xl overflow-x-auto text-[10px] leading-relaxed">
+{`curl -X POST ${baseUrl}/transactions \\
+  -H "Authorization: Bearer SUA_CHAVE" \\
+  -H "Content-Type: application/json" \\
+  -H "Idempotency-Key: pedido-123" \\
+  -d '{"amount":47.9,"description":"Padaria","accountId":"ID_DA_CONTA","externalId":"pedido-123"}'`}
+          </pre>
+        </details>
+
+        <p className="text-[10px] text-slate-400 dark:text-slate-500 text-center leading-relaxed">
+          A chave dá acesso de escrita aos seus lançamentos. Guarde com cuidado e revogue o que não usar mais.
+        </p>
       </div>
     </div>
   );
