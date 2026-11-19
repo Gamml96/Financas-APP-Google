@@ -23,7 +23,7 @@ Aplicação web progressiva (PWA) de gestão financeira pessoal desenvolvida com
   - Suporte offline com sincronização automática do Firestore.
   - Lembretes e notificações de contas a vencer.
 - **Exportação de Dados**: Exportação de transações em formato CSV.
-- **API pública v1**: Chaves de acesso com escopos para bots e automações criarem e editarem lançamentos (veja [API pública v1](#-api-pública-v1)).
+- **API pública v1**: Chaves de acesso com escopos para bots e automações criarem, editarem e excluírem lançamentos (veja [API pública v1](#-api-pública-v1)).
 
 ## 🛠️ Tecnologias Utilizadas
 
@@ -56,7 +56,7 @@ Aplicação web progressiva (PWA) de gestão financeira pessoal desenvolvida com
 
 ## 🔌 API pública v1
 
-API HTTP para bots e automações criarem e editarem lançamentos em seu nome, sem compartilhar sua conta Google.
+API HTTP para bots e automações criarem, editarem e excluírem lançamentos em seu nome, sem compartilhar sua conta Google.
 
 - **Base URL**: `https://financas-app-google.vercel.app/api/v1`
 - **Formato**: JSON em todas as rotas.
@@ -82,11 +82,12 @@ Authorization: Bearer vidi_<keyId>_<secret>
 |---|---|
 | `transactions:write` | Criar lançamentos |
 | `transactions:update` | Editar lançamentos (inclusive parcelas futuras) |
+| `transactions:delete` | Excluir lançamentos (inclusive parcelas futuras de um grupo) |
 | `transactions:read` | Consultar lançamentos |
 | `accounts:read` | Listar contas (necessário para descobrir o `accountId`) |
 | `categories:read` | Listar categorias válidas |
 
-Ao criar a chave, o padrão é `transactions:write` + `accounts:read` + `categories:read`. O escopo `transactions:update` é **opcional** e precisa ser marcado à parte: uma chave de bot criada só para lançar não consegue editar o histórico. É possível ter até **10 chaves ativas** por usuário.
+Ao criar a chave, o padrão é `transactions:write` + `accounts:read` + `categories:read`. Os escopos `transactions:update` e `transactions:delete` são **opcionais** e precisam ser marcados à parte: uma chave de bot criada só para lançar não consegue alterar nem apagar o histórico. É possível ter até **10 chaves ativas** por usuário.
 
 ### Rotas
 
@@ -101,6 +102,7 @@ Ao criar a chave, o padrão é `transactions:write` + `accounts:read` + `categor
 | `GET` | `/transactions` | `transactions:read` |
 | `GET` | `/transactions/:id` | `transactions:read` |
 | `PATCH` | `/transactions/:id` | `transactions:update` |
+| `DELETE` | `/transactions/:id` | `transactions:delete` |
 | `GET` | `/keys` | somente sessão do app |
 | `POST` | `/keys` | somente sessão do app |
 | `DELETE` | `/keys/:id` | somente sessão do app |
@@ -223,6 +225,35 @@ Resposta `200`:
 }
 ```
 
+### Excluir um lançamento
+
+```bash
+curl -X DELETE "https://financas-app-google.vercel.app/api/v1/transactions/abc123" \
+  -H "Authorization: Bearer vidi_..."
+```
+
+Para excluir também as parcelas seguintes do mesmo grupo:
+
+```bash
+curl -X DELETE "https://financas-app-google.vercel.app/api/v1/transactions/abc123?scope=future" \
+  -H "Authorization: Bearer vidi_..."
+```
+
+| Query | Detalhes |
+|---|---|
+| `scope` | `single` (padrão) exclui só o lançamento; `future` exclui ele e as parcelas seguintes do mesmo `groupId` e tipo com data ≥ a atual |
+
+- `scope=future` replica a regra do app e exige que o lançamento tenha `groupId` (senão `400`).
+- Lançamento de outro usuário responde `404`; id inexistente responde `404`.
+- `DELETE` é naturalmente idempotente.
+- **Não há "Desfazer"** via API — a exclusão é definitiva (no app, o "Desfazer" recria o documento preservando o mesmo id, mas um `DELETE` pela API não deixa backup). Use com cuidado.
+
+Resposta `200`:
+
+```json
+{ "ok": true, "deleted": 1, "ids": ["abc123"] }
+```
+
 ### Idempotência e deduplicação
 
 - **`Idempotency-Key`** (header, 8–200 caracteres): se a mesma chave for repetida em até 24h, a resposta original é devolvida sem criar nada de novo (`Idempotent-Replay: true`). Enquanto a primeira requisição está em andamento, a repetição recebe `409 idempotency-in-progress`.
@@ -281,7 +312,7 @@ Erros seguem o formato:
 - `apiKeys` e `apiIdempotency` são **inacessíveis pelo cliente** pelas regras do Firestore (default-deny), então hash, salt e contadores não vazam.
 - Cada chave tem escopos próprios, limite de uso e revogação imediata; a lista em Ajustes mostra o último uso de cada uma.
 - Uma chave só enxerga, escreve e edita os dados do próprio dono: conta de outro usuário responde `403` na criação/edição e `404` na leitura; lançamento de outro usuário responde `404` também na edição.
-- Editar é um escopo separado (`transactions:update`), então uma chave criada apenas para lançar não altera o histórico.
+- Editar e excluir são escopos separados (`transactions:update` e `transactions:delete`), então uma chave criada apenas para lançar não altera nem apaga o histórico.
 - A sessão do app (Firebase ID token) é verificada no servidor com `node:crypto` e os certificados públicos do Google — sem `firebase-admin/auth`, que quebra no runtime da Vercel por causa do `jwks-rsa`.
 - Rotas de chave exigem a sessão do app: uma chave de API nunca consegue criar ou revogar outras chaves.
 

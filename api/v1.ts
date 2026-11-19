@@ -54,6 +54,7 @@ const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000;
 const ALL_SCOPES = [
   'transactions:write',
   'transactions:update',
+  'transactions:delete',
   'transactions:read',
   'accounts:read',
   'categories:read',
@@ -607,6 +608,7 @@ function handleIndex(res: VercelResponse): void {
         'POST /api/v1/transactions',
         'GET  /api/v1/transactions/:id',
         'PATCH /api/v1/transactions/:id?scope=single|future',
+        'DELETE /api/v1/transactions/:id?scope=single|future',
         'GET  /api/v1/keys',
         'POST /api/v1/keys',
         'DELETE /api/v1/keys/:id',
@@ -1293,6 +1295,78 @@ async function handleUpdateTransaction(
 }
 
 // ---------------------------------------------------------------------------
+// Rotas: exclusão de transações
+// ---------------------------------------------------------------------------
+
+async function handleDeleteTransaction(
+  db: Firestore,
+  auth: AuthInfo,
+  req: VercelRequest,
+  id: string,
+  res: VercelResponse
+): Promise<void> {
+  requireScope(auth, 'transactions:delete');
+
+  const scopeRaw = typeof req.query.scope === 'string' ? req.query.scope.trim().toLowerCase() : '';
+  const scope = scopeRaw || 'single';
+  if (scope !== 'single' && scope !== 'future') {
+    throw new ApiError(400, 'invalid-request', '"scope" deve ser "single" ou "future".');
+  }
+
+  const ref = db.collection('transactions').doc(id);
+  const snap = await ref.get();
+  if (!snap.exists) throw new ApiError(404, 'not-found', 'Lançamento não encontrado.');
+  const current = snap.data() || {};
+  if (current.userId !== auth.uid) throw new ApiError(404, 'not-found', 'Lançamento não encontrado.');
+
+  if (scope === 'single') {
+    await ref.delete();
+    ok(res, 200, { deleted: 1, ids: [id] });
+    return;
+  }
+
+  const groupId = String(current.groupId || '');
+  if (!groupId) {
+    throw new ApiError(
+      400,
+      'invalid-request',
+      'Este lançamento não faz parte de um grupo de parcelas; use "scope=single".'
+    );
+  }
+
+  // Mesma regra do app: exclui o lançamento e as parcelas seguintes do mesmo
+  // grupo e tipo com data >= a atual.
+  const groupSnap = await db
+    .collection('transactions')
+    .where('userId', '==', auth.uid)
+    .where('groupId', '==', groupId)
+    .get();
+
+  const currentDate = timestampToDate(current.date) || new Date();
+  const currentDayStart = startOfDaySP(currentDate).getTime();
+  const type = String(current.type || '');
+
+  const targets = groupSnap.docs.filter((doc) => {
+    const data = doc.data() || {};
+    if (String(data.type || '') !== type) return false;
+    const txDate = timestampToDate(data.date);
+    return txDate !== null && startOfDaySP(txDate).getTime() >= currentDayStart;
+  });
+  if (!targets.some((doc) => doc.id === id)) targets.push(snap as any);
+
+  const ids = targets.map((doc) => doc.id);
+  for (let index = 0; index < targets.length; index += 400) {
+    const batch = db.batch();
+    for (const doc of targets.slice(index, index + 400)) {
+      batch.delete(doc.ref);
+    }
+    await batch.commit();
+  }
+
+  ok(res, 200, { deleted: ids.length, ids });
+}
+
+// ---------------------------------------------------------------------------
 // Rotas: chaves de API (somente sessão)
 // ---------------------------------------------------------------------------
 
@@ -1505,6 +1579,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       }
       if (method === 'PATCH' && id) {
         await handleUpdateTransaction(db, auth, req, id, res);
+        return;
+      }
+      if (method === 'DELETE' && id) {
+        await handleDeleteTransaction(db, auth, req, id, res);
         return;
       }
     }
