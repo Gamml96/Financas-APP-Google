@@ -4261,7 +4261,7 @@ function ApiKeysManager() {
             Chaves de acesso
           </p>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
-            Permita que um bot ou automação crie lançamentos em seu nome. Cada chave tem escopos próprios e pode ser revogada a qualquer momento.
+            Permita que um bot ou automação crie e edite lançamentos em seu nome. Cada chave tem escopos próprios e pode ser revogada a qualquer momento.
           </p>
         </div>
 

@@ -53,6 +53,7 @@ const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000;
 
 const ALL_SCOPES = [
   'transactions:write',
+  'transactions:update',
   'transactions:read',
   'accounts:read',
   'categories:read',
@@ -132,7 +133,7 @@ function applyCors(res: VercelResponse, origin: string): void {
   if (!origin) return;
   if (STATIC_ORIGINS.includes(origin) || PREVIEW_ORIGIN.test(origin)) {
     res.setHeader('Access-Control-Allow-Origin', origin);
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type, Idempotency-Key, X-API-Key');
     res.setHeader('Access-Control-Max-Age', '86400');
   }
@@ -605,6 +606,7 @@ function handleIndex(res: VercelResponse): void {
         'GET  /api/v1/transactions?limit=50&cursor=...&from=YYYY-MM-DD&to=YYYY-MM-DD&accountId=...&type=expense',
         'POST /api/v1/transactions',
         'GET  /api/v1/transactions/:id',
+        'PATCH /api/v1/transactions/:id?scope=single|future',
         'GET  /api/v1/keys',
         'POST /api/v1/keys',
         'DELETE /api/v1/keys/:id',
@@ -988,6 +990,309 @@ async function handleGetTransaction(
 }
 
 // ---------------------------------------------------------------------------
+// Rotas: edição de transações
+// ---------------------------------------------------------------------------
+
+function timestampToDate(value: unknown): Date | null {
+  if (value instanceof Timestamp) return value.toDate();
+  if (value instanceof Date) return value;
+  if (typeof value === 'string') {
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+  if (typeof value === 'number') return new Date(value);
+  return null;
+}
+
+/** Mesma normalização do app (src/services/faturaParser.ts). */
+function normalizeDescription(text: string): string {
+  return text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+}
+
+function optionalString(
+  body: Record<string, unknown>,
+  field: string,
+  options: { max: number; min?: number }
+): string | undefined {
+  const value = body[field];
+  if (value === undefined) return undefined;
+  if (typeof value !== 'string') {
+    throw new ApiError(400, 'invalid-request', `O campo "${field}" deve ser texto.`);
+  }
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    throw new ApiError(400, 'invalid-request', `O campo "${field}" não pode ser vazio.`);
+  }
+  if (options.min !== undefined && trimmed.length < options.min) {
+    throw new ApiError(400, 'invalid-request', `O campo "${field}" é muito curto.`);
+  }
+  if (trimmed.length > options.max) {
+    throw new ApiError(400, 'invalid-request', `O campo "${field}" excede ${options.max} caracteres.`);
+  }
+  return trimmed;
+}
+
+/** Guarda a correção de categoria do mesmo jeito que o app (userSettings.categoryMappings). */
+async function learnCategory(
+  db: Firestore,
+  uid: string,
+  description: string,
+  category: string
+): Promise<void> {
+  const key = normalizeDescription(description);
+  if (!key) return;
+  await db
+    .collection('userSettings')
+    .doc(uid)
+    .set({ categoryMappings: { [key]: category } }, { merge: true });
+}
+
+function normalizeInstant(date: Date): Timestamp {
+  return Timestamp.fromDate(calendarToInstant(toCalendar(date)));
+}
+
+async function handleUpdateTransaction(
+  db: Firestore,
+  auth: AuthInfo,
+  req: VercelRequest,
+  id: string,
+  res: VercelResponse
+): Promise<void> {
+  requireScope(auth, 'transactions:update');
+
+  const scopeRaw = typeof req.query.scope === 'string' ? req.query.scope.trim().toLowerCase() : '';
+  const scope = scopeRaw || 'single';
+  if (scope !== 'single' && scope !== 'future') {
+    throw new ApiError(400, 'invalid-request', '"scope" deve ser "single" ou "future".');
+  }
+
+  const ref = db.collection('transactions').doc(id);
+  const snap = await ref.get();
+  if (!snap.exists) throw new ApiError(404, 'not-found', 'Lançamento não encontrado.');
+  const current = snap.data() || {};
+  if (current.userId !== auth.uid) throw new ApiError(404, 'not-found', 'Lançamento não encontrado.');
+
+  const body = readBody(req);
+  const has = (field: string) => body[field] !== undefined;
+
+  const changes: Record<string, any> = {};
+
+  if (has('amount')) {
+    const amount = Number(body.amount);
+    if (!Number.isFinite(amount) || amount <= 0 || amount > 100_000_000) {
+      throw new ApiError(400, 'invalid-request', '"amount" deve ser um número maior que zero.');
+    }
+    changes.amount = amount;
+  }
+
+  if (has('type')) {
+    const type = String(body.type).trim();
+    if (type !== 'expense' && type !== 'income') {
+      throw new ApiError(400, 'invalid-request', '"type" deve ser "expense" ou "income".');
+    }
+    changes.type = type;
+  }
+
+  if (has('paymentType')) {
+    const paymentType = String(body.paymentType).trim();
+    if (paymentType !== 'credit' && paymentType !== 'debit') {
+      throw new ApiError(400, 'invalid-request', '"paymentType" deve ser "credit" ou "debit".');
+    }
+    changes.paymentType = paymentType;
+  }
+
+  const category = optionalString(body, 'category', { max: 60 });
+  if (category !== undefined) changes.category = category;
+
+  const description = optionalString(body, 'description', { max: 200 });
+  if (description !== undefined) changes.description = description;
+
+  if (has('isRecurring')) {
+    if (typeof body.isRecurring !== 'boolean') {
+      throw new ApiError(400, 'invalid-request', '"isRecurring" deve ser booleano.');
+    }
+    changes.isRecurring = body.isRecurring;
+  }
+
+  if (has('frequency')) {
+    const frequency = String(body.frequency).trim();
+    if (frequency !== 'weekly' && frequency !== 'monthly' && frequency !== 'yearly') {
+      throw new ApiError(400, 'invalid-request', '"frequency" deve ser "weekly", "monthly" ou "yearly".');
+    }
+    changes.frequency = frequency;
+  }
+
+  // Conta: se mudou, precisa existir e pertencer ao dono da chave.
+  let accountId = String(current.accountId || '');
+  let account: Record<string, any> | null = null;
+  if (has('accountId')) {
+    accountId = optionalString(body, 'accountId', { max: 200, min: 1 }) as string;
+    const accountSnap = await db.collection('accounts').doc(accountId).get();
+    if (!accountSnap.exists) throw new ApiError(400, 'invalid-account', 'Conta não encontrada.');
+    account = accountSnap.data() || {};
+    if (account.userId !== auth.uid) {
+      throw new ApiError(403, 'forbidden', 'Esta conta não pertence ao usuário da chave.');
+    }
+    changes.accountId = accountId;
+  } else if (has('paymentType') || has('date') || has('dueDate')) {
+    const accountSnap = await db.collection('accounts').doc(accountId).get();
+    account = accountSnap.exists ? accountSnap.data() || {} : null;
+  }
+
+  const accountChanged = has('accountId') && accountId !== String(current.accountId || '');
+  const effectivePaymentType = String(changes.paymentType ?? current.paymentType ?? 'debit');
+  const accountType = String(account?.type || '');
+  const isCreditAccount = accountType === 'credit' || accountType === 'hybrid';
+  if (effectivePaymentType === 'credit' && account && !isCreditAccount) {
+    throw new ApiError(400, 'invalid-request', 'A conta informada não é de crédito.');
+  }
+
+  const closingDay = Number(account?.closingDay);
+  const dueDay = Number(account?.dueDay);
+  const hasBillingCycle =
+    Number.isInteger(closingDay) && Number.isInteger(dueDay) && closingDay >= 1 && dueDay >= 1;
+
+  const currentDate = timestampToDate(current.date) || new Date();
+  const newDate =
+    has('date') && body.date !== null && body.date !== ''
+      ? parseDateInput(body.date, 'date')
+      : null;
+  const explicitDueDate =
+    has('dueDate') && body.dueDate !== null && body.dueDate !== ''
+      ? parseDateInput(body.dueDate, 'dueDate')
+      : null;
+
+  if (Object.keys(changes).length === 0 && !newDate && !explicitDueDate) {
+    throw new ApiError(400, 'invalid-request', 'Informe ao menos um campo para atualizar.');
+  }
+
+  const audit: Record<string, any> = {
+    updatedAt: Timestamp.now(),
+    updatedVia: auth.keyId ? 'api' : 'session',
+  };
+
+  let updated: Array<{ id: string; data: Record<string, any> }> = [];
+
+  if (scope === 'single') {
+    const payload: Record<string, any> = { ...changes, ...audit };
+    if (newDate) payload.date = normalizeInstant(newDate);
+    if (explicitDueDate) {
+      payload.dueDate = normalizeInstant(explicitDueDate);
+    } else if (newDate) {
+      const dueDate =
+        effectivePaymentType === 'credit' && hasBillingCycle
+          ? calculateDueDate(newDate, closingDay, dueDay)
+          : newDate;
+      payload.dueDate = normalizeInstant(dueDate);
+    }
+
+    await ref.update(payload);
+    updated = [{ id, data: { ...current, ...payload } }];
+  } else {
+    const groupId = String(current.groupId || '');
+    if (!groupId) {
+      throw new ApiError(
+        400,
+        'invalid-request',
+        'Este lançamento não faz parte de um grupo de parcelas; use "scope=single".'
+      );
+    }
+
+    const groupSnap = await db
+      .collection('transactions')
+      .where('userId', '==', auth.uid)
+      .where('groupId', '==', groupId)
+      .get();
+
+    const currentDayStart = startOfDaySP(currentDate).getTime();
+    const targets = groupSnap.docs.filter((doc) => {
+      const txDate = timestampToDate(doc.data().date);
+      return txDate !== null && startOfDaySP(txDate).getTime() >= currentDayStart;
+    });
+    if (!targets.some((doc) => doc.id === id)) targets.push(snap as any);
+
+    const offset = newDate
+      ? startOfDaySP(newDate).getTime() - startOfDaySP(currentDate).getTime()
+      : 0;
+    const dateChanged = offset !== 0;
+
+    const writes: Array<{ ref: DocumentReference; payload: Record<string, any> }> = [];
+
+    for (const doc of targets) {
+      const tx = doc.data() || {};
+      const isCurrent = doc.id === id;
+      const originalDate = timestampToDate(tx.date) || currentDate;
+      const payload: Record<string, any> = { ...changes, ...audit };
+
+      let txNewDate = originalDate;
+      if (isCurrent) {
+        if (newDate) {
+          txNewDate = calendarToInstant(toCalendar(newDate));
+          payload.date = Timestamp.fromDate(txNewDate);
+        }
+      } else if (dateChanged) {
+        txNewDate = new Date(originalDate.getTime() + offset);
+        payload.date = Timestamp.fromDate(txNewDate);
+      }
+
+      if (isCurrent) {
+        if (explicitDueDate) {
+          payload.dueDate = normalizeInstant(explicitDueDate);
+        } else if (newDate) {
+          payload.dueDate = normalizeInstant(
+            effectivePaymentType === 'credit' && hasBillingCycle
+              ? calculateDueDate(newDate, closingDay, dueDay)
+              : newDate
+          );
+        }
+      } else if (effectivePaymentType === 'credit') {
+        if (dateChanged || accountChanged) {
+          if (hasBillingCycle) {
+            payload.dueDate = normalizeInstant(calculateDueDate(txNewDate, closingDay, dueDay));
+          } else if (dateChanged) {
+            const originalDueDate = timestampToDate(tx.dueDate);
+            if (originalDueDate) {
+              payload.dueDate = Timestamp.fromDate(
+                new Date(originalDueDate.getTime() + offset)
+              );
+            }
+          }
+        }
+      } else if (dateChanged) {
+        payload.dueDate = normalizeInstant(txNewDate);
+      }
+
+      writes.push({ ref: doc.ref, payload });
+    }
+
+    // Firestore aceita até 500 operações por batch.
+    for (let index = 0; index < writes.length; index += 400) {
+      const batch = db.batch();
+      for (const write of writes.slice(index, index + 400)) {
+        batch.update(write.ref, write.payload);
+      }
+      await batch.commit();
+    }
+
+    updated = writes.map((write) => {
+      const original = targets.find((doc) => doc.id === write.ref.id)?.data() || {};
+      return { id: write.ref.id, data: { ...original, ...write.payload } };
+    });
+  }
+
+  if (category !== undefined && category !== String(current.category || '')) {
+    const source = description ?? String(current.description || '');
+    await learnCategory(db, auth.uid, source, category).catch(() => undefined);
+  }
+
+  ok(res, 200, {
+    scope,
+    updated: updated.length,
+    transactions: updated.map((item) => serializeTransaction(item.id, item.data)),
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Rotas: chaves de API (somente sessão)
 // ---------------------------------------------------------------------------
 
@@ -1196,6 +1501,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       }
       if (method === 'GET' && id) {
         await handleGetTransaction(db, auth, id, res);
+        return;
+      }
+      if (method === 'PATCH' && id) {
+        await handleUpdateTransaction(db, auth, req, id, res);
         return;
       }
     }

@@ -23,7 +23,7 @@ Aplicação web progressiva (PWA) de gestão financeira pessoal desenvolvida com
   - Suporte offline com sincronização automática do Firestore.
   - Lembretes e notificações de contas a vencer.
 - **Exportação de Dados**: Exportação de transações em formato CSV.
-- **API pública v1**: Chaves de acesso com escopos para bots e automações criarem lançamentos (veja [API pública v1](#-api-pública-v1)).
+- **API pública v1**: Chaves de acesso com escopos para bots e automações criarem e editarem lançamentos (veja [API pública v1](#-api-pública-v1)).
 
 ## 🛠️ Tecnologias Utilizadas
 
@@ -56,7 +56,7 @@ Aplicação web progressiva (PWA) de gestão financeira pessoal desenvolvida com
 
 ## 🔌 API pública v1
 
-API HTTP para bots e automações criarem lançamentos em seu nome, sem compartilhar sua conta Google.
+API HTTP para bots e automações criarem e editarem lançamentos em seu nome, sem compartilhar sua conta Google.
 
 - **Base URL**: `https://financas-app-google.vercel.app/api/v1`
 - **Formato**: JSON em todas as rotas.
@@ -81,11 +81,12 @@ Authorization: Bearer vidi_<keyId>_<secret>
 | Escopo | Permite |
 |---|---|
 | `transactions:write` | Criar lançamentos |
+| `transactions:update` | Editar lançamentos (inclusive parcelas futuras) |
 | `transactions:read` | Consultar lançamentos |
 | `accounts:read` | Listar contas (necessário para descobrir o `accountId`) |
 | `categories:read` | Listar categorias válidas |
 
-Ao criar a chave, o padrão é `transactions:write` + `accounts:read` + `categories:read`. É possível ter até **10 chaves ativas** por usuário.
+Ao criar a chave, o padrão é `transactions:write` + `accounts:read` + `categories:read`. O escopo `transactions:update` é **opcional** e precisa ser marcado à parte: uma chave de bot criada só para lançar não consegue editar o histórico. É possível ter até **10 chaves ativas** por usuário.
 
 ### Rotas
 
@@ -99,6 +100,7 @@ Ao criar a chave, o padrão é `transactions:write` + `accounts:read` + `categor
 | `POST` | `/transactions` | `transactions:write` |
 | `GET` | `/transactions` | `transactions:read` |
 | `GET` | `/transactions/:id` | `transactions:read` |
+| `PATCH` | `/transactions/:id` | `transactions:update` |
 | `GET` | `/keys` | somente sessão do app |
 | `POST` | `/keys` | somente sessão do app |
 | `DELETE` | `/keys/:id` | somente sessão do app |
@@ -161,6 +163,66 @@ Resposta `201`:
 
 Lançamentos criados pela API recebem `source: "api"` e o `apiKeyId` que os originou.
 
+### Editar um lançamento
+
+```bash
+curl -X PATCH "https://financas-app-google.vercel.app/api/v1/transactions/abc123" \
+  -H "Authorization: Bearer vidi_..." \
+  -H "Content-Type: application/json" \
+  -d '{"amount": 52.5, "category": "Mercado"}'
+```
+
+Para corrigir também as parcelas seguintes do mesmo grupo:
+
+```bash
+curl -X PATCH "https://financas-app-google.vercel.app/api/v1/transactions/abc123?scope=future" \
+  -H "Authorization: Bearer vidi_..." \
+  -H "Content-Type: application/json" \
+  -d '{"description": "Compra corrigida"}'
+```
+
+| Query | Detalhes |
+|---|---|
+| `scope` | `single` (padrão) edita só o lançamento; `future` edita ele e as parcelas seguintes do mesmo `groupId` |
+
+Campos aceitos (todos opcionais, mas envie **ao menos um**):
+
+| Campo | Tipo | Detalhes |
+|---|---|---|
+| `amount` | number | Maior que zero |
+| `type` | string | `expense` ou `income` |
+| `paymentType` | string | `credit` ou `debit`; validado contra o tipo da conta |
+| `category` | string | Máx. 60 caracteres |
+| `description` | string | Máx. 200 caracteres |
+| `accountId` | string | Precisa pertencer ao dono da chave |
+| `date` | string | `YYYY-MM-DD` no fuso `America/Sao_Paulo` |
+| `dueDate` | string | `YYYY-MM-DD`; em compra de crédito sem `dueDate`, é recalculado pelo fechamento/vencimento quando a data muda |
+| `isRecurring` | boolean | Marca o lançamento como recorrente |
+| `frequency` | string | `weekly`, `monthly` ou `yearly` |
+
+Comportamento:
+
+- `scope=single` altera apenas o documento informado.
+- `scope=future` replica a regra do app: aplica as mudanças ao lançamento e às parcelas seguintes do mesmo `groupId`, deslocando as datas pelo mesmo intervalo. Exige que o lançamento tenha `groupId` (senão `400`).
+- Em compra de crédito, quando a data muda, o vencimento das parcelas futuras é recalculado pelo fechamento/vencimento da conta.
+- Ao mudar a `category`, a correção é registrada em `userSettings.categoryMappings` (igual ao app), para as próximas importações de fatura.
+- `userId`, `externalId`, `source`, `installment`, `totalInstallments` e `groupId` **não** são alteráveis.
+- Lançamento de outro usuário responde `404`, e a conta de outro usuário responde `403`.
+- `PATCH` é naturalmente idempotente: repetir a mesma requisição com a mesma `date` não desloca as datas de novo.
+
+Resposta `200`:
+
+```json
+{
+  "ok": true,
+  "scope": "future",
+  "updated": 4,
+  "transactions": [
+    { "id": "abc123", "amount": 52.5, "category": "Mercado", "date": "2026-11-16T15:00:00.000Z" }
+  ]
+}
+```
+
 ### Idempotência e deduplicação
 
 - **`Idempotency-Key`** (header, 8–200 caracteres): se a mesma chave for repetida em até 24h, a resposta original é devolvida sem criar nada de novo (`Idempotent-Replay: true`). Enquanto a primeira requisição está em andamento, a repetição recebe `409 idempotency-in-progress`.
@@ -218,7 +280,8 @@ Erros seguem o formato:
 - Tokens nunca são gravados em texto puro (scrypt com salt por chave) e nunca voltam em nenhuma resposta.
 - `apiKeys` e `apiIdempotency` são **inacessíveis pelo cliente** pelas regras do Firestore (default-deny), então hash, salt e contadores não vazam.
 - Cada chave tem escopos próprios, limite de uso e revogação imediata; a lista em Ajustes mostra o último uso de cada uma.
-- Uma chave só enxerga e escreve os dados do próprio dono: conta de outro usuário responde `403` na criação e `404` na leitura.
+- Uma chave só enxerga, escreve e edita os dados do próprio dono: conta de outro usuário responde `403` na criação/edição e `404` na leitura; lançamento de outro usuário responde `404` também na edição.
+- Editar é um escopo separado (`transactions:update`), então uma chave criada apenas para lançar não altera o histórico.
 - A sessão do app (Firebase ID token) é verificada no servidor com `node:crypto` e os certificados públicos do Google — sem `firebase-admin/auth`, que quebra no runtime da Vercel por causa do `jwks-rsa`.
 - Rotas de chave exigem a sessão do app: uma chave de API nunca consegue criar ou revogar outras chaves.
 

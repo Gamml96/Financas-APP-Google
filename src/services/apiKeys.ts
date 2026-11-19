@@ -11,6 +11,7 @@ const BASE = '/api/v1';
 
 export const API_SCOPES = [
   { id: 'transactions:write', label: 'Criar lançamentos', description: 'Permite criar despesas e receitas.' },
+  { id: 'transactions:update', label: 'Editar lançamentos', description: 'Permite corrigir valor, categoria, descrição e datas, inclusive parcelas futuras.' },
   { id: 'transactions:read', label: 'Ler lançamentos', description: 'Permite consultar o histórico.' },
   { id: 'accounts:read', label: 'Ler contas', description: 'Necessário para descobrir o accountId.' },
   { id: 'categories:read', label: 'Ler categorias', description: 'Permite escolher uma categoria válida.' },
