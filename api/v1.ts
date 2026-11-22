@@ -503,38 +503,37 @@ function readBody(req: VercelRequest): Record<string, unknown> {
   // O SDK do Vercel pode entregar `req.body` de formas diferentes dependendo do
   // runtime e do conteúdo enviado. Normalizamos antes de validar.
   let raw: unknown = req.body;
-  let body: unknown;
 
-  if (raw === undefined || raw === null) {
-    return {};
-  }
+  if (raw === undefined || raw === null) return {};
+
+  // String
   if (typeof raw === 'string') {
     if (raw.length === 0) return {};
     if (Buffer.byteLength(raw) > MAX_BODY_BYTES) {
       throw new ApiError(413, 'payload-too-large', 'Corpo da requisição muito grande (máx. 32 KB).');
     }
     try {
-      body = JSON.parse(raw);
-    } catch {
+      raw = JSON.parse(raw);
+    } catch (_e) {
       throw new ApiError(400, 'invalid-json', 'Corpo da requisição não é um JSON válido.');
     }
-  } else if (Buffer.isBuffer(raw)) {
+  }
+  // Buffer → converte para string e faz parse
+  else if (Buffer.isBuffer(raw)) {
     const text = raw.toString('utf8');
     if (text.length === 0) return {};
     try {
-      body = JSON.parse(text);
-    } catch {
+      raw = JSON.parse(text);
+    } catch (_e) {
       throw new ApiError(400, 'invalid-json', 'Corpo da requisição não é um JSON válido.');
     }
-  } else {
-    body = raw;
   }
 
-  if (body === undefined || body === null) return {};
-  if (typeof body !== 'object' || Array.isArray(body)) {
+  if (raw === undefined || raw === null) return {};
+  if (typeof raw !== 'object' || Array.isArray(raw)) {
     throw new ApiError(400, 'invalid-request', 'O corpo deve ser um objeto JSON.');
   }
-  return body as Record<string, unknown>;
+  return raw as Record<string, unknown>;
 }
 
 function readString(
