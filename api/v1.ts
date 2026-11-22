@@ -500,17 +500,34 @@ function readBody(req: VercelRequest): Record<string, unknown> {
     throw new ApiError(413, 'payload-too-large', 'Corpo da requisição muito grande (máx. 32 KB).');
   }
 
-  let body: unknown = req.body;
-  if (typeof body === 'string') {
-    if (body.length === 0) return {};
-    if (Buffer.byteLength(body) > MAX_BODY_BYTES) {
+  // O SDK do Vercel pode entregar `req.body` de formas diferentes dependendo do
+  // runtime e do conteúdo enviado. Normalizamos antes de validar.
+  let raw: unknown = req.body;
+  let body: unknown;
+
+  if (raw === undefined || raw === null) {
+    return {};
+  }
+  if (typeof raw === 'string') {
+    if (raw.length === 0) return {};
+    if (Buffer.byteLength(raw) > MAX_BODY_BYTES) {
       throw new ApiError(413, 'payload-too-large', 'Corpo da requisição muito grande (máx. 32 KB).');
     }
     try {
-      body = JSON.parse(body);
+      body = JSON.parse(raw);
     } catch {
       throw new ApiError(400, 'invalid-json', 'Corpo da requisição não é um JSON válido.');
     }
+  } else if (Buffer.isBuffer(raw)) {
+    const text = raw.toString('utf8');
+    if (text.length === 0) return {};
+    try {
+      body = JSON.parse(text);
+    } catch {
+      throw new ApiError(400, 'invalid-json', 'Corpo da requisição não é um JSON válido.');
+    }
+  } else {
+    body = raw;
   }
 
   if (body === undefined || body === null) return {};
